@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>llm_ops chat</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fafafa;
+      --surface: #ffffff;
+      --border: #e3e3e3;
+      --text: #1a1a1a;
+      --muted: #6b6b6b;
+      --accent: #c96342;
+      --user-bg: #fef0eb;
+      --err: #c43d4d;
+      --ok: #22a06b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1a1a;
+        --surface: #232323;
+        --border: #383838;
+        --text: #f0f0f0;
+        --muted: #9b9b9b;
+        --user-bg: rgba(201, 99, 66, 0.15);
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text);
+      height: 100vh; display: flex; flex-direction: column;
+    }
+
+    header {
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: var(--surface); display: flex; align-items: center;
+      gap: 16px; flex-wrap: wrap;
+    }
+    h1 { font-size: 14px; font-weight: 600; }
+    .status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+    .status .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
+    .status.ok .dot { background: var(--ok); }
+    .status.err .dot { background: var(--err); }
+    .controls { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    select {
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 5px 8px; font-size: 12px;
+      font-family: ui-monospace, monospace; min-width: 220px;
+    }
+    .temp-control { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+    .temp-control input { width: 80px; }
+    button.icon {
+      background: transparent; border: 1px solid var(--border); color: var(--text);
+      width: 30px; height: 30px; border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.icon:hover { background: var(--bg); }
+
+    /* Toggle base (RAG y Agente) */
+    .toggle {
+      display: flex; align-items: center; gap: 6px; font-size: 11px;
+      color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
+      padding: 4px 8px 4px 6px; cursor: pointer; user-select: none;
+    }
+    .toggle:hover { background: var(--bg); }
+    .toggle.active { color: var(--accent); border-color: var(--accent); }
+    .toggle input { margin: 0; cursor: pointer; }
+    .toggle.disabled { opacity: 0.45; cursor: not-allowed; }
+    .toggle .count {
+      font-family: ui-monospace, monospace; background: var(--bg);
+      padding: 1px 6px; border-radius: 3px; font-size: 10px;
+      border: 1px solid var(--border);
+    }
+    .toggle.active .count { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+
+    /* System prompt panel */
+    .sysprompt { background: var(--surface); border-bottom: 1px solid var(--border); }
+    .sysprompt-toggle {
+      width: 100%; max-width: 820px; margin: 0 auto;
+      padding: 8px 20px; background: transparent; border: none;
+      color: var(--muted); cursor: pointer; font-size: 11px;
+      font-family: inherit; text-align: left;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sysprompt-toggle:hover { color: var(--text); }
+    .sysprompt-toggle .arrow { display: inline-block; transition: transform 0.15s; font-size: 10px; }
+    .sysprompt.open .sysprompt-toggle .arrow { transform: rotate(90deg); }
+    .sysprompt-toggle .label { font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; }
+    .sysprompt-toggle .status-text { margin-left: auto; font-family: ui-monospace, monospace; font-size: 10px; }
+    .sysprompt-toggle .status-text.active { color: var(--accent); }
+    .sysprompt-body { display: none; max-width: 820px; margin: 0 auto; padding: 0 20px 12px; }
+    .sysprompt.open .sysprompt-body { display: block; }
+    .sysprompt-body textarea {
+      width: 100%; background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 14px; font-family: inherit; font-size: 13px;
+      resize: vertical; min-height: 80px; max-height: 240px; line-height: 1.5;
+    }
+    .sysprompt-body textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .sysprompt-hint { font-size: 10.5px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+    main { flex: 1; overflow-y: auto; padding: 24px 20px; position: relative; }
+    .messages { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+    .msg { display: flex; flex-direction: column; gap: 5px; }
+    .msg .role {
+      font-size: 9.5px; font-weight: 600; color: var(--muted);
+      letter-spacing: 0.6px; text-transform: uppercase;
+    }
+    .msg.user { align-items: flex-end; }
+    .msg.user .role { padding-right: 16px; }
+    .msg.assist .role { padding-left: 16px; }
+    .bubble {
+      padding: 10px 16px; border-radius: 14px; max-width: 85%;
+      line-height: 1.5; font-size: 14px; white-space: pre-wrap; word-wrap: break-word;
+    }
+    .msg.user .bubble {
+      background: var(--user-bg);
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    .msg.assist .bubble { background: var(--surface); border: 1px solid var(--border); }
+    .msg.assist.streaming .bubble::after {
+      content: '▍'; color: var(--accent); animation: blink 1s infinite; margin-left: 1px;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+    .meta { display: flex; gap: 6px; padding-left: 16px; flex-wrap: wrap; align-items: center; }
+    .meta .badge {
+      background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+      padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: ui-monospace, monospace;
+    }
+    .meta .badge.rag {
+      border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent);
+    }
+    .meta .badge.agent {
+      border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent);
+    }
+    .citations { padding-left: 16px; font-size: 11px; color: var(--muted);
+      display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+    .citations .label { font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; font-size: 9.5px; }
+    .citations .src {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+      padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 10px; color: var(--text);
+    }
+    .citations .src .score { color: var(--muted); margin-left: 4px; }
+
+    /* Tool cards (modo agente) */
+    .agent-trace {
+      max-width: 820px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 6px;
+      padding-left: 16px;
+    }
+    .iteration-marker {
+      font-size: 9.5px; color: var(--muted); font-family: ui-monospace, monospace;
+      letter-spacing: 0.4px; text-transform: uppercase; padding: 2px 0;
+    }
+    .tool-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 12px; font-size: 12px; max-width: 760px;
+    }
+    .tool-card.running { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+    .tool-card.error   { border-color: var(--err); }
+    .tool-card.done    { border-color: var(--border); }
+    .tool-card-header {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .tool-card-header .icon { font-size: 14px; }
+    .tool-card-header .name { font-family: ui-monospace, monospace; font-weight: 600; color: var(--text); }
+    .tool-card-header .status {
+      margin-left: auto; font-size: 10px; font-family: ui-monospace, monospace;
+      color: var(--muted);
+    }
+    .tool-card.running .status { color: var(--accent); }
+    .tool-card.error .status { color: var(--err); }
+    .tool-card details { margin-top: 6px; }
+    .tool-card summary {
+      cursor: pointer; font-size: 10px; color: var(--muted);
+      letter-spacing: 0.4px; text-transform: uppercase; font-weight: 600;
+      padding: 2px 0;
+    }
+    .tool-card summary:hover { color: var(--text); }
+    .tool-card pre {
+      margin-top: 4px; padding: 8px 10px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 4px;
+      font-size: 11px; font-family: ui-monospace, monospace;
+      max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    }
+
+    footer { padding: 14px 20px; border-top: 1px solid var(--border); background: var(--surface); }
+    .input-row { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+    textarea#input {
+      flex: 1; background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 14px; font-family: inherit; font-size: 14px;
+      resize: none; max-height: 200px; min-height: 42px; line-height: 1.4;
+    }
+    textarea#input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    button.primary {
+      padding: 0 20px; height: 42px; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      border: 1px solid var(--accent); background: var(--accent); color: white; min-width: 100px;
+    }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.primary.stop { background: transparent; color: var(--accent); }
+
+    .empty {
+      color: var(--muted); text-align: center; padding: 60px 20px;
+      font-size: 14px; line-height: 1.7;
+    }
+    .empty code {
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 1px 6px; border-radius: 3px; font-size: 12px;
+    }
+    .err {
+      color: var(--err); background: color-mix(in srgb, var(--err) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--err) 30%, transparent);
+      padding: 10px 14px; border-radius: 6px; font-size: 12px;
+      font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-word;
+    }
+    .ok {
+      color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+      padding: 8px 14px; border-radius: 6px; font-size: 12px; font-family: ui-monospace, monospace;
+    }
+
+    .dropzone {
+      position: fixed; inset: 0; background: color-mix(in srgb, var(--accent) 15%, transparent);
+      border: 4px dashed var(--accent); display: none; z-index: 1000; pointer-events: none;
+      align-items: center; justify-content: center;
+    }
+    .dropzone.visible { display: flex; }
+    .dropzone .msg-drop {
+      background: var(--surface); border: 1px solid var(--accent);
+      padding: 24px 36px; border-radius: 10px; font-size: 16px; color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>llm_ops chat</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="status-text">conectando…</span></div>
+    <div class="controls">
+      <select id="model-select" disabled><option>cargando…</option></select>
+      <div class="temp-control">
+        <span>temp</span>
+        <input type="range" id="temp" min="0" max="2" step="0.1" value="0.2">
+        <span id="temp-val">0.2</span>
+      </div>
+      <label class="toggle" id="rag-toggle" title="Si está activo, antes de cada mensaje recuperamos chunks de Qdrant y los inyectamos como contexto">
+        <input type="checkbox" id="rag-checkbox">
+        <span>RAG</span>
+        <span class="count" id="rag-count">0</span>
+      </label>
+      <label class="toggle" id="agent-toggle" title="Modo agente: el modelo decide cuándo llamar tools (rag_search, etc.) y el bucle se cierra cuando da una respuesta">
+        <input type="checkbox" id="agent-checkbox">
+        <span>Agente</span>
+        <span class="count" id="agent-count">0</span>
+      </label>
+      <button class="icon" id="clear" title="Limpiar historial">↻</button>
+    </div>
+  </header>
+
+  <div class="sysprompt" id="sysprompt">
+    <button class="sysprompt-toggle" id="sysprompt-toggle" type="button">
+      <span class="arrow">▶</span>
+      <span class="label">system prompt</span>
+      <span class="status-text" id="sysprompt-status">vacío</span>
+    </button>
+    <div class="sysprompt-body">
+      <textarea id="sysprompt-input" placeholder="Instrucciones persistentes para el modelo. Ej: 'Eres un asistente conciso y técnico. Responde siempre en español.'"></textarea>
+      <div class="sysprompt-hint">
+        Persistido en localStorage. Se inyecta como mensaje system. En modo agente llega como instrucciones del sistema antes del bucle.
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <div class="messages" id="messages">
+      <div class="empty">
+        Empieza escribiendo un mensaje. Modelo arriba, temperatura al lado.<br>
+        <small>Activa <strong>RAG</strong> para inyectar chunks automáticamente, o <strong>Agente</strong> para que el modelo decida cuándo usar tools.</small><br>
+        <small>Arrastra archivos a la ventana para indexarlos. Atajos: <code>Enter</code> envía · <code>Shift+Enter</code> salto.</small>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <form class="input-row" id="form">
+      <textarea id="input" placeholder="Escribe tu mensaje…" rows="1"></textarea>
+      <button type="submit" class="primary" id="send">Enviar</button>
+    </form>
+  </footer>
+
+  <div class="dropzone" id="dropzone">
+    <div class="msg-drop">📥 Suéltalo para indexar en RAG</div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const messagesEl  = $('#messages');
+    const modelSelect = $('#model-select');
+    const tempInput   = $('#temp');
+    const tempVal     = $('#temp-val');
+    const inputEl     = $('#input');
+    const formEl      = $('#form');
+    const sendBtn     = $('#send');
+    const statusEl    = $('#status');
+    const statusText  = $('#status-text');
+    const clearBtn    = $('#clear');
+    const sysWrap     = $('#sysprompt');
+    const sysToggle   = $('#sysprompt-toggle');
+    const sysInput    = $('#sysprompt-input');
+    const sysStatus   = $('#sysprompt-status');
+    const ragToggle   = $('#rag-toggle');
+    const ragCheckbox = $('#rag-checkbox');
+    const ragCount    = $('#rag-count');
+    const agentToggle = $('#agent-toggle');
+    const agentCheckbox = $('#agent-checkbox');
+    const agentCount  = $('#agent-count');
+    const dropzone    = $('#dropzone');
+
+    const LS_SYSTEM = 'llmops.systemPrompt';
+    const LS_SYSTEM_OPEN = 'llmops.systemPromptOpen';
+    const LS_RAG    = 'llmops.ragEnabled';
+    const LS_AGENT  = 'llmops.agentEnabled';
+    const RAG_TOP_K = 5;
+    const AGENT_MAX_ITER = 8;
+
+    let history = [];
+    let currentController = null;
+
+    // ---------- System prompt ----------
+
+    function loadSystemPrompt() {
+      sysInput.value = localStorage.getItem(LS_SYSTEM) || '';
+      updateSysStatus();
+      if (localStorage.getItem(LS_SYSTEM_OPEN) === '1') sysWrap.classList.add('open');
+    }
+    function updateSysStatus() {
+      const text = sysInput.value.trim();
+      if (!text) { sysStatus.textContent = 'vacío'; sysStatus.classList.remove('active'); }
+      else { sysStatus.textContent = `activo · ${text.length} chars`; sysStatus.classList.add('active'); }
+    }
+    let saveTimer = null;
+    sysInput.addEventListener('input', () => {
+      updateSysStatus();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => localStorage.setItem(LS_SYSTEM, sysInput.value), 250);
+    });
+    sysToggle.addEventListener('click', () => {
+      const open = sysWrap.classList.toggle('open');
+      localStorage.setItem(LS_SYSTEM_OPEN, open ? '1' : '0');
+      if (open) sysInput.focus();
+    });
+
+    // ---------- RAG / Agente ----------
+
+    function loadToggles() {
+      ragCheckbox.checked = localStorage.getItem(LS_RAG) === '1';
+      agentCheckbox.checked = localStorage.getItem(LS_AGENT) === '1';
+      updateToggleUI();
+    }
+    function updateToggleUI() {
+      ragToggle.classList.toggle('active', ragCheckbox.checked);
+      agentToggle.classList.toggle('active', agentCheckbox.checked);
+      // En modo agente, RAG inyectado se desactiva (la tool rag_search lo hace)
+      ragToggle.classList.toggle('disabled', agentCheckbox.checked);
+      ragCheckbox.disabled = agentCheckbox.checked;
+    }
+    ragCheckbox.addEventListener('change', () => {
+      localStorage.setItem(LS_RAG, ragCheckbox.checked ? '1' : '0');
+      updateToggleUI();
+    });
+    agentCheckbox.addEventListener('change', () => {
+      localStorage.setItem(LS_AGENT, agentCheckbox.checked ? '1' : '0');
+      updateToggleUI();
+    });
+
+    async function refreshRagDocsCount() {
+      try {
+        const r = await fetch('/v1/rag/documents');
+        if (!r.ok) { ragCount.textContent = '?'; return; }
+        const data = await r.json();
+        ragCount.textContent = String(data.data?.length ?? 0);
+      } catch { ragCount.textContent = '?'; }
+    }
+    async function refreshAgentToolsCount() {
+      try {
+        const r = await fetch('/v1/agents/tools');
+        if (!r.ok) { agentCount.textContent = '?'; return; }
+        const data = await r.json();
+        agentCount.textContent = String(data.data?.length ?? 0);
+      } catch { agentCount.textContent = '?'; }
+    }
+
+    async function ragQuery(query) {
+      const r = await fetch('/v1/rag/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, top_k: RAG_TOP_K }),
+      });
+      if (!r.ok) throw new Error(`RAG query falló: HTTP ${r.status} ${(await r.text()).slice(0,200)}`);
+      return r.json();
+    }
+
+    // ---------- Drag & drop ----------
+
+    let dragDepth = 0;
+    window.addEventListener('dragenter', (e) => {
+      if (![...e.dataTransfer.types].includes('Files')) return;
+      dragDepth++; dropzone.classList.add('visible'); e.preventDefault();
+    });
+    window.addEventListener('dragleave', () => {
+      dragDepth--;
+      if (dragDepth <= 0) { dragDepth = 0; dropzone.classList.remove('visible'); }
+    });
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragDepth = 0; dropzone.classList.remove('visible');
+      const files = [...(e.dataTransfer.files || [])];
+      for (const f of files) await uploadFile(f);
+      await refreshRagDocsCount();
+    });
+    async function uploadFile(file) {
+      clearEmpty();
+      const fd = new FormData();
+      fd.append('file', file);
+      appendOk(`Subiendo "${file.name}" (${(file.size/1024).toFixed(1)} KB)…`);
+      try {
+        const r = await fetch('/v1/rag/documents', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0,200)}`);
+        const j = await r.json();
+        appendOk(`✓ "${file.name}" indexado · ${j.chunks_indexed} chunks · doc_id ${j.doc_id.slice(0,12)}`);
+      } catch (e) {
+        appendErr(`Error subiendo "${file.name}": ${e.message}`);
+      }
+    }
+
+    function buildMessages(extraSystems = []) {
+      const out = [];
+      const userSys = sysInput.value.trim();
+      if (userSys) out.push({ role: 'system', content: userSys });
+      for (const s of extraSystems) if (s) out.push({ role: 'system', content: s });
+      out.push(...history);
+      return out;
+    }
+
+    // ---------- Setup ----------
+
+    function setStatus(cls, text) { statusEl.className = 'status ' + cls; statusText.textContent = text; }
+    async function loadModels() {
+      try {
+        const r = await fetch('/v1/models');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        const models = (data.data || []).map(m => m.id).sort();
+        modelSelect.innerHTML = '';
+        if (models.length === 0) {
+          modelSelect.innerHTML = '<option value="">(sin modelos: corre `make pull-models`)</option>';
+          modelSelect.disabled = true; setStatus('err', 'sin modelos'); return;
+        }
+        for (const id of models) {
+          const opt = document.createElement('option');
+          opt.value = id; opt.textContent = id;
+          modelSelect.appendChild(opt);
+        }
+        const chat = models.find(m => /llama|qwen|mistral|phi|gemma/i.test(m) && !/embed/i.test(m));
+        modelSelect.value = chat || models[0];
+        modelSelect.disabled = false; setStatus('ok', 'conectado');
+      } catch (e) {
+        setStatus('err', `error: ${e.message}`);
+        modelSelect.innerHTML = `<option>error</option>`;
+      }
+    }
+    tempInput.addEventListener('input', () => tempVal.textContent = tempInput.value);
+    clearBtn.addEventListener('click', () => {
+      history = [];
+      messagesEl.innerHTML = '<div class="empty">Conversación limpiada.</div>';
+    });
+
+    // ---------- Render ----------
+
+    function appendMsg(role, content) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + (role === 'user' ? 'user' : 'assist');
+      const roleEl = document.createElement('div');
+      roleEl.className = 'role';
+      roleEl.textContent = role === 'user' ? 'tú' : 'asistente';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = content;
+      wrap.appendChild(roleEl); wrap.appendChild(bubble);
+      messagesEl.appendChild(wrap);
+      scroll();
+      return { wrap, bubble };
+    }
+    function appendMeta(wrap, ttftMs, chunks, totalMs, ragHits, agentMeta) {
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const genMs = Math.max(1, totalMs - ttftMs);
+      const tps = chunks > 0 ? (chunks / (genMs / 1000)).toFixed(1) : '—';
+      let html = `<span class="badge">TTFT ${ttftMs.toFixed(0)} ms</span>`;
+      if (chunks > 0) html += `<span class="badge">${chunks} chunks</span><span class="badge">${tps} chunks/s</span>`;
+      html += `<span class="badge">${(totalMs/1000).toFixed(2)} s total</span>`;
+      if (ragHits && ragHits.length > 0) html += `<span class="badge rag">RAG · ${ragHits.length} chunks</span>`;
+      if (agentMeta) html += `<span class="badge agent">AGENTE · ${agentMeta.iterations} iter · ${agentMeta.tool_calls} tools</span>`;
+      meta.innerHTML = html;
+      wrap.appendChild(meta);
+
+      if (ragHits && ragHits.length > 0) {
+        const cit = document.createElement('div');
+        cit.className = 'citations';
+        let citHtml = '<span class="label">fuentes:</span>';
+        for (const h of ragHits) {
+          const src = (h.source || '').replace(/^upload:\/\//, '');
+          const shortSrc = src.split(/[\\/]/).pop() || src;
+          citHtml += `<span class="src" title="${escapeHtml(h.source)}">${escapeHtml(shortSrc)}<span class="score">${h.score.toFixed(3)}</span></span>`;
+        }
+        cit.innerHTML = citHtml;
+        wrap.appendChild(cit);
+      }
+      scroll();
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function appendErr(text) { clearEmpty(); const d = document.createElement('div'); d.className='err'; d.textContent=text; messagesEl.appendChild(d); scroll(); }
+    function appendOk(text)  { clearEmpty(); const d = document.createElement('div'); d.className='ok';  d.textContent=text; messagesEl.appendChild(d); scroll(); }
+    function scroll() { document.querySelector('main').scrollTop = document.querySelector('main').scrollHeight; }
+    function clearEmpty() { messagesEl.querySelector('.empty')?.remove(); }
+    function setSending(s) {
+      if (s) { sendBtn.textContent = '■ Stop'; sendBtn.classList.add('stop'); }
+      else   { sendBtn.textContent = 'Enviar'; sendBtn.classList.remove('stop'); }
+    }
+    function autoresize() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(200, inputEl.scrollHeight) + 'px';
+    }
+
+    // ---------- Tool card rendering (modo agente) ----------
+
+    function appendAgentTrace() {
+      const trace = document.createElement('div');
+      trace.className = 'agent-trace';
+      messagesEl.appendChild(trace);
+      scroll();
+      return trace;
+    }
+    function appendIterationMarker(traceEl, n) {
+      const m = document.createElement('div');
+      m.className = 'iteration-marker';
+      m.textContent = `── iteración ${n} ──`;
+      traceEl.appendChild(m);
+      scroll();
+    }
+    function createToolCard(traceEl, name, args) {
+      const card = document.createElement('div');
+      card.className = 'tool-card running';
+      card.innerHTML = `
+        <div class="tool-card-header">
+          <span class="icon">🔧</span>
+          <span class="name">${escapeHtml(name)}</span>
+          <span class="status">ejecutando…</span>
+        </div>
+        <details><summary>args</summary><pre></pre></details>
+        <details class="tool-result-block" style="display:none"><summary>resultado</summary><pre></pre></details>
+      `;
+      card.querySelector('details pre').textContent = JSON.stringify(args, null, 2);
+      traceEl.appendChild(card);
+      scroll();
+      return card;
+    }
+    function finalizeToolCard(card, ev) {
+      card.classList.remove('running');
+      if (ev.type === 'tool_error') {
+        card.classList.add('error');
+        card.querySelector('.status').textContent = `✗ error`;
+        const block = card.querySelector('.tool-result-block');
+        block.style.display = '';
+        block.querySelector('pre').textContent = ev.error;
+      } else {
+        card.classList.add('done');
+        card.querySelector('.status').textContent = `✓ ${ev.duration_ms} ms`;
+        const block = card.querySelector('.tool-result-block');
+        block.style.display = '';
+        block.querySelector('pre').textContent = JSON.stringify(ev.result, null, 2);
+      }
+      scroll();
+    }
+
+    // ---------- Send (chat normal con o sin RAG) ----------
+
+    async function sendChat() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      const model = modelSelect.value;
+      if (!model) { appendErr('Selecciona un modelo'); return; }
+
+      clearEmpty();
+      history.push({ role: 'user', content: text });
+      appendMsg('user', text);
+      inputEl.value = ''; autoresize();
+
+      const { wrap: assistWrap, bubble: assistBubble } = appendMsg('assistant', '');
+      assistWrap.classList.add('streaming');
+      setSending(true);
+
+      currentController = new AbortController();
+      const startTime = performance.now();
+      let ttft = null, chunkCount = 0, fullText = '';
+      let ragHits = null;
+
+      try {
+        const extraSystems = [];
+        if (ragCheckbox.checked && !agentCheckbox.checked) {
+          try {
+            const ragRes = await ragQuery(text);
+            ragHits = ragRes.hits || [];
+            if (ragRes.system_message) extraSystems.push(ragRes.system_message);
+          } catch (e) { appendErr(`(RAG falló) ${e.message}`); }
+        }
+
+        const resp = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model, messages: buildMessages(extraSystems),
+            temperature: parseFloat(tempInput.value), stream: true,
+          }),
+          signal: currentController.signal,
+        });
+        if (!resp.ok) {
+          let detail = '';
+          try { detail = JSON.stringify(await resp.json()); } catch { detail = await resp.text(); }
+          throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 400)}`);
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
+          for (const ev of events) {
+            for (const line of ev.split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+              const payload = line.slice(6);
+              if (payload === '[DONE]') continue;
+              let obj; try { obj = JSON.parse(payload); } catch { continue; }
+              if (obj.error) throw new Error(obj.error.message || JSON.stringify(obj.error));
+              const piece = obj.choices?.[0]?.delta?.content;
+              if (piece) {
+                if (ttft === null) ttft = performance.now() - startTime;
+                chunkCount++; fullText += piece;
+                assistBubble.textContent = fullText; scroll();
+              }
+            }
+          }
+        }
+        const totalMs = performance.now() - startTime;
+        if (fullText) {
+          history.push({ role: 'assistant', content: fullText });
+          appendMeta(assistWrap, ttft ?? totalMs, chunkCount, totalMs, ragHits, null);
+        } else { assistBubble.textContent = '(sin respuesta)'; }
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          assistBubble.textContent = (fullText || '') + '  [cancelado]';
+          if (fullText) history.push({ role: 'assistant', content: fullText });
+          else history.pop();
+        } else {
+          assistWrap.remove();
+          appendErr(`Error: ${e.message}`);
+          history.pop();
+        }
+      } finally {
+        assistWrap.classList.remove('streaming');
+        setSending(false);
+        currentController = null;
+        inputEl.focus();
+      }
+    }
+
+    // ---------- Send (modo agente: /v1/agents/run con SSE de eventos) ----------
+
+    async function sendAgent() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      const model = modelSelect.value;
+      if (!model) { appendErr('Selecciona un modelo'); return; }
+
+      clearEmpty();
+      history.push({ role: 'user', content: text });
+      appendMsg('user', text);
+      inputEl.value = ''; autoresize();
+
+      const traceEl = appendAgentTrace();
+      const cards = new Map();    // call_id -> card
+      let finalAnswer = null;
+      let totalIter = 0, totalTools = 0;
+
+      setSending(true);
+      currentController = new AbortController();
+      const startTime = performance.now();
+
+      try {
+        const resp = await fetch('/v1/agents/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: buildMessages(),
+            tools_allowed: null,
+            max_iterations: AGENT_MAX_ITER,
+            temperature: parseFloat(tempInput.value),
+          }),
+          signal: currentController.signal,
+        });
+        if (!resp.ok) {
+          let detail = '';
+          try { detail = JSON.stringify(await resp.json()); } catch { detail = await resp.text(); }
+          throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 400)}`);
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
+          for (const ev of events) {
+            for (const line of ev.split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+              const payload = line.slice(6);
+              if (payload === '[DONE]') continue;
+              let obj; try { obj = JSON.parse(payload); } catch { continue; }
+              handleAgentEvent(obj, traceEl, cards);
+              if (obj.type === 'iteration') totalIter = obj.n;
+              if (obj.type === 'tool_call') totalTools++;
+              if (obj.type === 'final') finalAnswer = obj.content || '';
+              if (obj.type === 'limit_reached') {
+                appendErr(`Límite de iteraciones (${obj.iterations}) alcanzado sin respuesta final. Tools ejecutadas: ${obj.tool_calls}.`);
+              }
+              if (obj.type === 'error') throw new Error(obj.message);
+            }
+          }
+        }
+
+        const totalMs = performance.now() - startTime;
+        if (finalAnswer !== null) {
+          const { wrap: aw, bubble: ab } = appendMsg('assistant', finalAnswer);
+          history.push({ role: 'assistant', content: finalAnswer });
+          appendMeta(aw, totalMs, 0, totalMs, null, { iterations: totalIter, tool_calls: totalTools });
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          appendErr('Agente cancelado.');
+          history.pop();
+        } else {
+          appendErr(`Error: ${e.message}`);
+          history.pop();
+        }
+      } finally {
+        setSending(false);
+        currentController = null;
+        inputEl.focus();
+      }
+    }
+
+    function handleAgentEvent(ev, traceEl, cards) {
+      if (ev.type === 'iteration') {
+        appendIterationMarker(traceEl, ev.n);
+      } else if (ev.type === 'tool_call') {
+        const card = createToolCard(traceEl, ev.name, ev.arguments);
+        cards.set(ev.id, card);
+      } else if (ev.type === 'tool_result' || ev.type === 'tool_error') {
+        const card = cards.get(ev.id);
+        if (card) finalizeToolCard(card, ev);
+      }
+    }
+
+    // ---------- Submit / hotkeys ----------
+
+    formEl.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (sendBtn.classList.contains('stop')) {
+        currentController?.abort();
+        return;
+      }
+      if (agentCheckbox.checked) sendAgent();
+      else sendChat();
+    });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); formEl.requestSubmit(); }
+    });
+    inputEl.addEventListener('input', autoresize);
+
+    loadSystemPrompt();
+    loadToggles();
+    loadModels();
+    refreshRagDocsCount();
+    refreshAgentToolsCount();
+    setInterval(refreshRagDocsCount, 15000);
+    inputEl.focus();
+  </script>
+</body>
+</html>
