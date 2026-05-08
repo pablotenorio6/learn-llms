@@ -146,3 +146,28 @@ async def _chat_with_tools_impl(client, model, messages, tools, options=None):
 OllamaClient.chat_with_tools = lambda self, model, messages, tools, options=None: _chat_with_tools_impl(
     self, model, messages, tools, options
 )
+
+
+async def _chat_with_tools_stream_impl(client, model, messages, tools, options=None):
+    """Streaming con tools. Yields chunks tal cual los devuelve Ollama (JSONL).
+    
+    Cada chunk puede traer message.content (token), y en done=true puede traer
+    message.tool_calls. El consumidor acumula content y revisa tool_calls al cerrar.
+    """
+    payload = {
+        "model": model,
+        "messages": messages,
+        "tools": tools,
+        "stream": True,
+        "keep_alive": client.keep_alive,
+        "options": options or {},
+    }
+    async for chunk in client._post_stream("/api/chat", payload):
+        yield chunk
+
+
+async def _chat_with_tools_stream_method(self, model, messages, tools, options=None):
+    async for c in _chat_with_tools_stream_impl(self, model, messages, tools, options):
+        yield c
+
+OllamaClient.chat_with_tools_stream = _chat_with_tools_stream_method

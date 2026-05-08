@@ -698,13 +698,19 @@
       inputEl.value = ''; autoresize();
 
       const traceEl = appendAgentTrace();
-      const cards = new Map();    // call_id -> card
-      let finalAnswer = null;
+      const cards = new Map();
+      const agentState = {
+        wrap: null,        // burbuja del asistente (se crea al primer content_delta)
+        bubble: null,
+        text: '',
+        startTime: performance.now(),
+        ttft: null,
+      };
       let totalIter = 0, totalTools = 0;
+      let limitWarning = null;
 
       setSending(true);
       currentController = new AbortController();
-      const startTime = performance.now();
 
       try {
         const resp = await fetch('/v1/agents/run', {
@@ -739,31 +745,43 @@
               const payload = line.slice(6);
               if (payload === '[DONE]') continue;
               let obj; try { obj = JSON.parse(payload); } catch { continue; }
-              handleAgentEvent(obj, traceEl, cards);
+              handleAgentEvent(obj, traceEl, cards, agentState);
               if (obj.type === 'iteration') totalIter = obj.n;
               if (obj.type === 'tool_call') totalTools++;
-              if (obj.type === 'final') finalAnswer = obj.content || '';
               if (obj.type === 'limit_reached') {
-                appendErr(`Límite de iteraciones (${obj.iterations}) alcanzado sin respuesta final. Tools ejecutadas: ${obj.tool_calls}.`);
+                limitWarning = `Límite de iteraciones (${obj.iterations}) alcanzado. Tools ejecutadas: ${obj.tool_calls}.`;
               }
               if (obj.type === 'error') throw new Error(obj.message);
             }
           }
         }
 
-        const totalMs = performance.now() - startTime;
-        if (finalAnswer !== null) {
-          const { wrap: aw, bubble: ab } = appendMsg('assistant', finalAnswer);
-          history.push({ role: 'assistant', content: finalAnswer });
-          appendMeta(aw, totalMs, 0, totalMs, null, { iterations: totalIter, tool_calls: totalTools });
+        const totalMs = performance.now() - agentState.startTime;
+        // Cerrar burbuja del asistente si la hubo
+        if (agentState.wrap) {
+          agentState.wrap.classList.remove('streaming');
+          if (agentState.text) {
+            history.push({ role: 'assistant', content: agentState.text });
+          }
+          appendMeta(agentState.wrap, agentState.ttft ?? totalMs, 0, totalMs, null,
+                     { iterations: totalIter, tool_calls: totalTools });
         }
+        if (limitWarning) appendErr(limitWarning);
       } catch (e) {
         if (e.name === 'AbortError') {
-          appendErr('Agente cancelado.');
-          history.pop();
+          if (agentState.wrap) {
+            agentState.wrap.classList.remove('streaming');
+            agentState.bubble.textContent = (agentState.text || '') + '  [cancelado]';
+            if (agentState.text) history.push({ role: 'assistant', content: agentState.text });
+            else history.pop();
+          } else {
+            appendErr('Agente cancelado.');
+            history.pop();
+          }
         } else {
+          if (agentState.wrap) agentState.wrap.classList.remove('streaming');
           appendErr(`Error: ${e.message}`);
-          history.pop();
+          if (!agentState.text) history.pop();
         }
       } finally {
         setSending(false);
@@ -772,9 +790,22 @@
       }
     }
 
-    function handleAgentEvent(ev, traceEl, cards) {
+    function handleAgentEvent(ev, traceEl, cards, agentState) {
       if (ev.type === 'iteration') {
         appendIterationMarker(traceEl, ev.n);
+      } else if (ev.type === 'content_delta') {
+        // Asegurar que hay una burbuja viva del asistente al final del trace, y crecerla
+        if (!agentState.bubble) {
+          const { wrap, bubble } = appendMsg('assistant', '');
+          wrap.classList.add('streaming');
+          agentState.wrap = wrap;
+          agentState.bubble = bubble;
+          agentState.text = '';
+          if (agentState.ttft === null) agentState.ttft = performance.now() - agentState.startTime;
+        }
+        agentState.text += ev.content;
+        agentState.bubble.textContent = agentState.text;
+        scroll();
       } else if (ev.type === 'tool_call') {
         const card = createToolCard(traceEl, ev.name, ev.arguments);
         cards.set(ev.id, card);
