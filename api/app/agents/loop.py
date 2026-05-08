@@ -1,13 +1,8 @@
-"""Bucle del agente: model → tool_calls → execute → tool results → model → …
+"""Bucle del agente con streaming.
 
-Uso:
-    loop = AgentLoop(client, ctx, tools, max_iterations=10)
-    async for event in loop.run(model, messages):
-        # emit SSE
-        ...
-
-Eventos emitidos (cada uno es un dict serializable a JSON):
+Eventos emitidos:
     {"type": "iteration", "n": int}
+    {"type": "content_delta", "content": str}        ← nuevo: tokens streamed del asistente
     {"type": "tool_call",   "id": str, "name": str, "arguments": dict}
     {"type": "tool_result", "id": str, "name": str, "result": Any, "duration_ms": float}
     {"type": "tool_error",  "id": str, "name": str, "error": str}
@@ -18,6 +13,7 @@ Eventos emitidos (cada uno es un dict serializable a JSON):
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -27,6 +23,33 @@ from app.agents.registry import Tool, ToolArgsError, serialize_for_llm
 from app.services.ollama_client import OllamaClient, OllamaError
 
 log = logging.getLogger(__name__)
+
+
+DEFAULT_AGENT_SYSTEM = """\
+Eres un asistente con acceso a tools que extienden tu conocimiento. Tu objetivo es responder al usuario con la mejor respuesta posible.
+
+DECISIÓN INTERNA (no la comuniques al usuario):
+Para cada mensaje, decides internamente si necesitas alguna tool. Esta deliberación es invisible para el usuario.
+
+CUÁNDO LLAMAR UNA TOOL:
+- La pregunta hace referencia (explícita o implícita) a los documentos, archivos, notas, base de datos, RAG, base de conocimiento o índice del usuario.
+- El usuario pide buscar, consultar o resumir contenido suyo.
+- La respuesta requiere datos específicos que no podrías conocer por entrenamiento general.
+- Ante la duda razonable, llámala — si vuelve vacía, lo reconocerás brevemente.
+
+CUÁNDO RESPONDER DIRECTAMENTE SIN TOOLS:
+- Conocimiento general claramente público (geografía, ciencia, hechos comunes, definiciones).
+- Saludos, conversación trivial, opiniones, escritura creativa, traducción.
+- Matemáticas, cálculo, lógica.
+
+CÓMO REDACTAR TU RESPUESTA AL USUARIO:
+- Responde DIRECTAMENTE al contenido de la pregunta. Nada más.
+- NO narres tu decisión sobre tools. Nunca digas "voy a llamar X", "no llamaré X", "buscaré en mi base de datos", "consultaré tus documentos", "no necesito buscar", o variantes.
+- NO te disculpes por límites que no tienes. Tienes acceso a tus tools — no digas "no tengo acceso a tu base de datos" porque sí lo tienes.
+- NO confundas "documentos del usuario" con "datos personales sensibles": el contenido del RAG es información que el usuario te ha dado para que la consultes, no PII que debas proteger.
+- Si una tool devuelve resultados útiles, intégralos naturalmente y cita la fuente cuando sea relevante.
+- Si una tool devuelve resultados vacíos o irrelevantes, di brevemente que no encontraste eso en los documentos y responde con tu conocimiento general.
+- No llames la misma tool con los mismos argumentos dos veces seguidas."""
 
 
 class AgentLoop:
@@ -48,56 +71,70 @@ class AgentLoop:
         model: str,
         messages: list[dict],
         options: dict | None = None,
+        inject_default_system: bool = True,
     ) -> AsyncIterator[dict]:
-        """Ejecuta el bucle. Itera hasta que el modelo deje de pedir tools, falle, o llegue al límite."""
         msgs = list(messages)
+        if inject_default_system:
+            has_system = bool(msgs) and msgs[0].get("role") == "system"
+            if has_system:
+                msgs[0] = {
+                    "role": "system",
+                    "content": DEFAULT_AGENT_SYSTEM + "\n\n---\n\n" + msgs[0].get("content", ""),
+                }
+            else:
+                msgs.insert(0, {"role": "system", "content": DEFAULT_AGENT_SYSTEM})
+
         tool_schemas = [t.schema for t in self.tools]
         total_tool_calls = 0
 
         for i in range(1, self.max_iterations + 1):
             yield {"type": "iteration", "n": i}
 
+            accumulated_content = ""
+            collected_tool_calls: list[dict] = []
+
             try:
-                resp = await self.client.chat_with_tools(
+                async for chunk in self.client.chat_with_tools_stream(
                     model=model,
                     messages=msgs,
                     tools=tool_schemas,
                     options=options,
-                )
+                ):
+                    msg = chunk.get("message") or {}
+                    piece = msg.get("content") or ""
+                    if piece:
+                        accumulated_content += piece
+                        yield {"type": "content_delta", "content": piece}
+                    tcs = msg.get("tool_calls") or []
+                    if tcs:
+                        collected_tool_calls.extend(tcs)
+                    # done=true llega en el último chunk; el bucle terminará al cerrarse el stream
             except OllamaError as e:
                 yield {"type": "error", "message": f"upstream error: {e}"}
                 return
 
-            msg = resp.get("message") or {}
-            content = msg.get("content") or ""
-            tcs = msg.get("tool_calls") or []
-
-            # Caso 1: el modelo dice "ya está, esta es la respuesta"
-            if not tcs:
+            if not collected_tool_calls:
                 yield {
                     "type": "final",
-                    "content": content,
+                    "content": accumulated_content,
                     "iterations": i,
                     "tool_calls": total_tool_calls,
                 }
                 return
 
-            # Caso 2: hay tool_calls. Re-añadir el mensaje del asistente al historial
-            # tal como vino (con tool_calls), y ejecutar cada una.
+            # Ramas con tool_calls: añadir el msg del asistente y ejecutar
             msgs.append({
                 "role": "assistant",
-                "content": content,
-                "tool_calls": tcs,
+                "content": accumulated_content,
+                "tool_calls": collected_tool_calls,
             })
 
-            for tc in tcs:
+            for tc in collected_tool_calls:
                 fn = tc.get("function") or {}
                 name = fn.get("name") or ""
-                # Ollama devuelve arguments como dict ya parseado; OpenAI manda string JSON.
                 raw_args = fn.get("arguments") or {}
                 if isinstance(raw_args, str):
                     try:
-                        import json
                         raw_args = json.loads(raw_args)
                     except json.JSONDecodeError:
                         raw_args = {}
@@ -140,7 +177,6 @@ class AgentLoop:
                     msgs.append({"role": "tool", "name": name, "content": serialize_for_llm({"error": err})})
                 total_tool_calls += 1
 
-        # Llegamos al límite sin que el modelo cierre
         yield {
             "type": "limit_reached",
             "iterations": self.max_iterations,
