@@ -54,6 +54,27 @@ Test de la victoria: apuntar el SDK de OpenAI a `http://localhost:8000/v1` con u
 
 ---
 
+## Mejora multi-proveedor — LiteLLM proxy (extensión de Fase 1)
+
+**Objetivo:** dejar de ser solo-Ollama. Mismo cliente, varios backends (Ollama local, OpenAI, Anthropic, etc.), con un punto único de control.
+
+Cambios:
+- Nuevo contenedor `litellm` (imagen `ghcr.io/berriai/litellm`) con `litellm-config.yaml` declarando aliases (`llama-local`, `qwen-local`, `gpt-4o-mini`, `claude-sonnet-4-6`, …) mapeados a `ollama_chat/...`, `openai/...`, `anthropic/...`.
+- La API ya no habla con Ollama. Habla con `http://litellm:4000/v1` usando el SDK oficial `openai` async, autenticada con `LITELLM_MASTER_KEY`.
+- `OllamaClient` → `LLMClient`. Métodos limpios (no monkey-patches): `chat`, `chat_stream`, `chat_with_tools(_stream)`, `embed`, `list_models`.
+- `AgentLoop` actualizado para acumular `tool_calls` progresivos en streaming OpenAI (deltas por `index` con `function.arguments` concatenándose). Soporta tools paralelas en una sola respuesta.
+- `/v1/models` queda alimentado por LiteLLM: la fuente de verdad de qué modelos existen es el YAML del proxy.
+
+Beneficios secundarios:
+- Cost tracking nativo de LiteLLM (lo conectaremos a Langfuse en Fase 2).
+- Retries y fallbacks declarativos por modelo en el YAML.
+- Las API keys de OpenAI/Anthropic viven en un solo sitio (el proxy), no esparcidas por la app.
+- Cambiar de proveedor o añadir uno nuevo es un edit del YAML + restart del contenedor; la API no se rebuildea.
+
+Test de la victoria: cambiar el modelo en la UI entre `llama-local` y `gpt-4o-mini` sin tocar código, y que tool calling funcione idéntico en ambos.
+
+---
+
 ## Fase 2 — Observabilidad (1 semana)
 
 **Objetivo**: si no lo mides, no lo entiendes. Esta es la fase que más distingue un proyecto de juguete de uno serio.

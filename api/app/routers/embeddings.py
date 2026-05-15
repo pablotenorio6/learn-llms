@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from app.models import EmbeddingItem, EmbeddingRequest, EmbeddingResponse, Usage
-from app.services.ollama_client import OllamaError
+from app.services.llm_client import LLMError
 
 router = APIRouter(tags=["embeddings"])
 
@@ -22,10 +22,10 @@ async def create_embeddings(req: EmbeddingRequest, request: Request) -> Embeddin
     if not inputs:
         raise HTTPException(status_code=400, detail="`input` cannot be empty")
 
-    client = request.app.state.ollama
+    client = request.app.state.llm
     try:
         result = await client.embed(req.model, inputs)
-    except OllamaError as e:
+    except LLMError as e:
         raise HTTPException(status_code=502, detail=f"upstream error: {e}")
 
     embeddings = result.get("embeddings") or []

@@ -56,7 +56,7 @@ async def run_agent(body: AgentRunRequest, request: Request):
     if not tools:
         raise HTTPException(status_code=400, detail="no hay tools disponibles")
 
-    client = request.app.state.ollama
+    client = request.app.state.llm
     ctx = {
         "rag": getattr(request.app.state, "rag", None),
     }

@@ -21,7 +21,7 @@ from app.models import (
     ChatMessage,
     Usage,
 )
-from app.services.ollama_client import OllamaClient, OllamaError
+from app.services.llm_client import LLMClient, LLMError
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ async def create_chat_completion(body: ChatCompletionRequest, request: Request):
     if not body.messages:
         raise HTTPException(status_code=400, detail="`messages` cannot be empty")
 
-    client: OllamaClient = request.app.state.ollama
+    client: LLMClient = request.app.state.llm
 
     if body.stream:
         return StreamingResponse(
@@ -50,20 +50,26 @@ async def create_chat_completion(body: ChatCompletionRequest, request: Request):
             },
         )
 
-    # Non-streaming
+    # Non-streaming. LiteLLM ya devuelve un objeto OpenAI estándar; lo
+    # re-empaquetamos en nuestros schemas (que añaden id/object/etc. propios).
     try:
         result = await client.chat(body)
-    except OllamaError as e:
+    except LLMError as e:
         raise HTTPException(status_code=502, detail=f"upstream error: {e}")
 
-    msg = result.get("message") or {}
-    content = msg.get("content", "")
-    finish = "length" if result.get("done_reason") == "length" else "stop"
+    choices_raw = result.get("choices") or []
+    if not choices_raw:
+        raise HTTPException(status_code=502, detail="upstream returned no choices")
+    first = choices_raw[0]
+    msg = first.get("message") or {}
+    content = msg.get("content") or ""
+    finish = first.get("finish_reason") or "stop"
 
+    usage_raw = result.get("usage") or {}
     return ChatCompletionResponse(
         id=_new_id(),
         created=int(time.time()),
-        model=body.model,
+        model=result.get("model") or body.model,
         choices=[
             ChatChoice(
                 index=0,
@@ -72,20 +78,24 @@ async def create_chat_completion(body: ChatCompletionRequest, request: Request):
             )
         ],
         usage=Usage(
-            prompt_tokens=int(result.get("prompt_eval_count") or 0),
-            completion_tokens=int(result.get("eval_count") or 0),
-            total_tokens=int(result.get("prompt_eval_count") or 0)
-            + int(result.get("eval_count") or 0),
+            prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
+            completion_tokens=int(usage_raw.get("completion_tokens") or 0),
+            total_tokens=int(usage_raw.get("total_tokens") or 0),
         ),
     )
 
 
 async def _stream_chunks(
-    client: OllamaClient,
+    client: LLMClient,
     body: ChatCompletionRequest,
     request: Request,
 ) -> AsyncIterator[bytes]:
-    """Generador SSE en formato OpenAI."""
+    """Generador SSE en formato OpenAI.
+
+    Re-emitimos chunks como ChatCompletionChunk de nuestro modelo para
+    mantener un id/object estables (LiteLLM ya manda objetos compatibles,
+    pero los normalizamos por si añadimos fields nuestros).
+    """
     completion_id = _new_id()
     created = int(time.time())
 
@@ -106,12 +116,16 @@ async def _stream_chunks(
 
     try:
         async for raw in client.chat_stream(body):
-            # Si el cliente cerró la conexión, abortamos
             if await request.is_disconnected():
                 log.info("chat.client_disconnected", extra={"id": completion_id})
                 return
 
-            piece = (raw.get("message") or {}).get("content") or ""
+            choices = raw.get("choices") or []
+            if not choices:
+                continue
+            choice = choices[0]
+            delta = choice.get("delta") or {}
+            piece = delta.get("content") or ""
             if piece:
                 yield _sse(
                     ChatCompletionChunk(
@@ -124,11 +138,10 @@ async def _stream_chunks(
                     )
                 )
 
-            if raw.get("done"):
-                finish_reason = "length" if raw.get("done_reason") == "length" else "stop"
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
                 break
-    except OllamaError as e:
-        # En medio del stream solo podemos notificar como evento de error
+    except LLMError as e:
         err = {"error": {"message": str(e), "type": "api_error", "code": 502}}
         yield f"data: {json.dumps(err)}\n\n".encode("utf-8")
         yield b"data: [DONE]\n\n"

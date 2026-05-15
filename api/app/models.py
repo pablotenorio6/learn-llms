@@ -106,7 +106,7 @@ class ModelInfo(BaseModel):
     id: str
     object: Literal["model"] = "model"
     created: int
-    owned_by: str = "ollama"
+    owned_by: str = "litellm"
     # extra info (no estándar OpenAI pero útil)
     metadata: dict[str, Any] | None = None
 

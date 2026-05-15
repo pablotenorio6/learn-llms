@@ -1,0 +1,63 @@
+# LiteLLM proxy config.
+#
+# - model_name es el alias que ve la API (y la UI). Estable.
+# - litellm_params.model es la cadena "<provider>/<model_id>" interna.
+# - ollama_chat/ habilita el modo de tool-calling estructurado para Ollama
+#   (mejor que el legacy 'ollama/' para tools). Para embeddings y modelos
+#   sin tools usamos 'ollama/' directamente.
+
+model_list:
+  # ---- Ollama local (GPU del host) ----
+  - model_name: llama-local
+    litellm_params:
+      model: ollama_chat/llama3.1:8b-instruct-q4_K_M
+      api_base: http://ollama:11434
+  - model_name: qwen-local
+    litellm_params:
+      model: ollama_chat/qwen2.5:7b-instruct-q4_K_M
+      api_base: http://ollama:11434
+  - model_name: phi-local
+    litellm_params:
+      model: ollama/phi3.5:3.8b
+      api_base: http://ollama:11434
+
+  # ---- Embeddings local ----
+  - model_name: nomic-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama:11434
+
+  # ---- OpenAI ----
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ---- Anthropic ----
+  # Nota: si el alias del modelo cambia, basta con tocar 'model:' aquí.
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+litellm_settings:
+  # Tira silenciosamente parámetros que un proveedor concreto no entiende
+  # (p.ej. presence_penalty con algunos endpoints) en vez de fallar.
+  drop_params: true
+  # Reintentos básicos por timeouts transitorios.
+  num_retries: 2
+  request_timeout: 600
+  # Telemetría apagada (la activaremos en Fase 2 con Langfuse).
+  set_verbose: false
+  telemetry: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

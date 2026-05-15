@@ -2,7 +2,7 @@
 
 Eventos emitidos:
     {"type": "iteration", "n": int}
-    {"type": "content_delta", "content": str}        ← nuevo: tokens streamed del asistente
+    {"type": "content_delta", "content": str}        ← tokens streamed del asistente
     {"type": "tool_call",   "id": str, "name": str, "arguments": dict}
     {"type": "tool_result", "id": str, "name": str, "result": Any, "duration_ms": float}
     {"type": "tool_error",  "id": str, "name": str, "error": str}
@@ -20,7 +20,7 @@ import uuid
 from typing import Any, AsyncIterator
 
 from app.agents.registry import Tool, ToolArgsError, serialize_for_llm
-from app.services.ollama_client import OllamaClient, OllamaError
+from app.services.llm_client import LLMClient, LLMError
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ CÓMO REDACTAR TU RESPUESTA AL USUARIO:
 class AgentLoop:
     def __init__(
         self,
-        client: OllamaClient,
+        client: LLMClient,
         ctx: dict | None,
         tools: list[Tool],
         max_iterations: int = 10,
@@ -106,7 +106,10 @@ class AgentLoop:
             yield {"type": "iteration", "n": i}
 
             accumulated_content = ""
-            collected_tool_calls: list[dict] = []
+            # tool_calls llegan en streaming como deltas con `index` estable y
+            # `function.arguments` que se va concatenando chunk a chunk.
+            tool_calls_accum: dict[int, dict[str, Any]] = {}
+            finish_reason: str | None = None
 
             try:
                 async for chunk in self.client.chat_with_tools_stream(
@@ -115,19 +118,46 @@ class AgentLoop:
                     tools=tool_schemas,
                     options=options,
                 ):
-                    msg = chunk.get("message") or {}
-                    piece = msg.get("content") or ""
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") or {}
+
+                    piece = delta.get("content") or ""
                     if piece:
                         accumulated_content += piece
                         yield {"type": "content_delta", "content": piece}
-                    tcs = msg.get("tool_calls") or []
-                    if tcs:
-                        collected_tool_calls.extend(tcs)
-                    # done=true llega en el último chunk; el bucle terminará al cerrarse el stream
-            except OllamaError as e:
+
+                    for tcd in delta.get("tool_calls") or []:
+                        idx = tcd.get("index", 0)
+                        slot = tool_calls_accum.setdefault(
+                            idx,
+                            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                        )
+                        if tcd.get("id"):
+                            slot["id"] = tcd["id"]
+                        if tcd.get("type"):
+                            slot["type"] = tcd["type"]
+                        fn = tcd.get("function") or {}
+                        if fn.get("name"):
+                            slot["function"]["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            slot["function"]["arguments"] += fn["arguments"]
+
+                    if choice.get("finish_reason"):
+                        finish_reason = choice["finish_reason"]
+            except LLMError as e:
                 yield {"type": "error", "message": f"upstream error: {e}"}
                 return
 
+            collected_tool_calls = [tool_calls_accum[k] for k in sorted(tool_calls_accum.keys())]
+
+            # Si no hay tool_calls válidas, es respuesta final.
+            # Importante: NO miramos finish_reason — LiteLLM con Ollama emite
+            # finish_reason="stop" aunque haya tool_calls en el delta, mientras
+            # que OpenAI puro emite "tool_calls". Confiamos en la presencia del
+            # tool_call para decidir ramificar.
             if not collected_tool_calls:
                 yield {
                     "type": "final",
@@ -137,31 +167,41 @@ class AgentLoop:
                 }
                 return
 
-            # Ramas con tool_calls: añadir el msg del asistente y ejecutar
+            # Si la id viene vacía (algunos proveedores la omiten en streaming),
+            # generamos una local para poder referenciarla en role=tool.
+            for tc in collected_tool_calls:
+                if not tc.get("id"):
+                    tc["id"] = f"call_{uuid.uuid4().hex[:16]}"
+
+            # Mensaje del asistente con los tool_calls completos.
             msgs.append({
                 "role": "assistant",
-                "content": accumulated_content,
+                "content": accumulated_content or None,
                 "tool_calls": collected_tool_calls,
             })
 
             for tc in collected_tool_calls:
+                call_id = tc["id"]
                 fn = tc.get("function") or {}
                 name = fn.get("name") or ""
-                raw_args = fn.get("arguments") or {}
+                raw_args: Any = fn.get("arguments") or "{}"
                 if isinstance(raw_args, str):
                     try:
-                        raw_args = json.loads(raw_args)
+                        raw_args = json.loads(raw_args) if raw_args.strip() else {}
                     except json.JSONDecodeError:
                         raw_args = {}
 
-                call_id = uuid.uuid4().hex[:8]
                 yield {"type": "tool_call", "id": call_id, "name": name, "arguments": raw_args}
 
                 tool = self.tools_by_name.get(name)
                 if not tool:
                     err = f"tool '{name}' no está en la allow-list"
                     yield {"type": "tool_error", "id": call_id, "name": name, "error": err}
-                    msgs.append({"role": "tool", "name": name, "content": serialize_for_llm({"error": err})})
+                    msgs.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": serialize_for_llm({"error": err}),
+                    })
                     total_tool_calls += 1
                     continue
 
@@ -178,18 +218,26 @@ class AgentLoop:
                     }
                     msgs.append({
                         "role": "tool",
-                        "name": name,
+                        "tool_call_id": call_id,
                         "content": serialize_for_llm(result),
                     })
                 except ToolArgsError as e:
                     err = f"args inválidos: {e}"
                     yield {"type": "tool_error", "id": call_id, "name": name, "error": err}
-                    msgs.append({"role": "tool", "name": name, "content": serialize_for_llm({"error": err})})
+                    msgs.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": serialize_for_llm({"error": err}),
+                    })
                 except Exception as e:
                     log.exception("agent.tool_failed", extra={"tool": name})
                     err = f"{type(e).__name__}: {e}"
                     yield {"type": "tool_error", "id": call_id, "name": name, "error": err}
-                    msgs.append({"role": "tool", "name": name, "content": serialize_for_llm({"error": err})})
+                    msgs.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": serialize_for_llm({"error": err}),
+                    })
                 total_tool_calls += 1
 
         yield {

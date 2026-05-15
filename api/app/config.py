@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import os
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -20,17 +22,16 @@ class Settings(BaseSettings):
     api_keys: str = "dev-key-changeme"
     api_require_auth: bool = False
 
-    # Ollama
-    ollama_host: str = "http://ollama:11434"
-    ollama_request_timeout: int = 600
-    ollama_keep_alive: str = "10m"
+    # LiteLLM proxy (la API habla con LiteLLM en formato OpenAI; LiteLLM enruta
+    # a Ollama / OpenAI / Anthropic según el alias del modelo).
+    litellm_base_url: str = "http://litellm:4000"
+    litellm_master_key: str = "sk-llmops-changeme"
+    litellm_request_timeout: int = 600
 
-    # Modelos
-    default_chat_model: str = "llama3.1:8b-instruct-q4_K_M"
-    default_embed_model: str = "nomic-embed-text"
-    bench_models: str = Field(
-        default="llama3.1:8b-instruct-q4_K_M,qwen2.5:7b-instruct-q4_K_M,phi3.5:3.8b"
-    )
+    # Modelos por defecto (alias declarados en litellm-config.yaml).
+    default_chat_model: str = "qwen-local"
+    default_embed_model: str = "nomic-embed"
+    bench_models: str = Field(default="llama-local,qwen-local,phi-local")
 
     # RAG
     qdrant_host: str = "http://qdrant:6333"

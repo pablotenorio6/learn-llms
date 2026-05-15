@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 
-from app.services.ollama_client import OllamaError
+from app.services.llm_client import LLMError
 
 router = APIRouter(tags=["health"])
 
@@ -18,12 +18,12 @@ async def healthz():
 
 @router.get("/readyz")
 async def readyz(request: Request):
-    """Readiness: Ollama es alcanzable y responde."""
-    client = request.app.state.ollama
+    """Readiness: LiteLLM proxy es alcanzable y devuelve los aliases configurados."""
+    client = request.app.state.llm
     try:
         models = await client.list_models()
-        return {"status": "ready", "models_loaded": len(models)}
-    except OllamaError as e:
+        return {"status": "ready", "models_available": len(models)}
+    except LLMError as e:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "not_ready", "reason": str(e)},

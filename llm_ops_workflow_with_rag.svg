@@ -1,236 +1,265 @@
-<svg viewBox="0 0 760 1080" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" font-family="ui-sans-serif, system-ui, sans-serif" style="">
-  <title id="title" style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Arquitectura llm_ops con RAG (Fase 3)</title>
-  <desc id="desc" style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Tres paneles. Arquitectura: host con Docker network conteniendo API, Ollama y Qdrant; carpeta docs/ bind-mounted; cliente fuera; GPU como recurso del host. Flujo de indexación: cómo un archivo (drag&amp;drop o watcher) acaba en Qdrant. Flujo de query con RAG: cómo un mensaje del usuario hace query al RAG, recupera chunks, y se inyectan en el chat.</desc>
+<svg viewBox="0 0 880 1140" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" font-family="ui-sans-serif, system-ui, sans-serif">
+  <title id="title">Arquitectura llm_ops con RAG y LiteLLM (Fase 3 + multi-proveedor)</title>
+  <desc id="desc">Tres paneles. Arquitectura: cuatro contenedores (Qdrant, API, LiteLLM, Ollama) en una red Docker, docs/ bind-mounted, GPU del host, cloud opcional. Indexación: cómo un archivo acaba en Qdrant. Query con RAG: cómo un mensaje pasa por el retriever y va al modelo a través de LiteLLM.</desc>
 
   <defs>
     <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="var(--text-300, #777)"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#777"/>
     </marker>
     <marker id="arrow2-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="var(--accent-secondary-100, #c96342)"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#c96342"/>
     </marker>
-  <mask id="imagine-text-gaps-irvj6j" maskUnits="userSpaceOnUse"><rect x="0" y="0" width="760" height="1080" fill="white"/><rect x="16.000001907348633" y="8.994832992553711" width="268.2927551269531" height="22.756460189819336" fill="black" rx="2"/><rect x="32" y="47.99586868286133" width="221.389892578125" height="19.005167961120605" fill="black" rx="2"/><rect x="78.06131744384766" y="88.74508666992188" width="48.877357482910156" height="21.255943298339844" fill="black" rx="2"/><rect x="51.76124572753906" y="107.9958724975586" width="101.84567260742188" height="19.005167961120605" fill="black" rx="2"/><rect x="298.9496765136719" y="81.7450942993164" width="62.7186279296875" height="21.255943298339844" fill="black" rx="2"/><rect x="264.19158935546875" y="100.9958724975586" width="131.61679077148438" height="19.005167961120605" fill="black" rx="2"/><rect x="283.2469787597656" y="116.9958724975586" width="93.50601196289062" height="19.005167961120605" fill="black" rx="2"/><rect x="289.1965637207031" y="62.24664306640625" width="91.60691833496094" height="16.00413417816162" fill="black" rx="2"/><rect x="640.5990600585938" y="88.74508666992188" width="33.80185508728027" height="21.255943298339844" fill="black" rx="2"/><rect x="615.3657836914062" y="107.9958724975586" width="84.71378326416016" height="19.005167961120605" fill="black" rx="2"/><rect x="52" y="175.99586486816406" width="162.28097534179688" height="19.005167961120605" fill="black" rx="2"/><rect x="70" y="213.4963836669922" width="152.65003967285156" height="16.754392623901367" fill="black" rx="2"/><rect x="70" y="235.74510192871094" width="73.90550994873047" height="21.255943298339844" fill="black" rx="2"/><rect x="69.24974822998047" y="253.99586486816406" width="56.323734283447266" height="19.005167961120605" fill="black" rx="2"/><rect x="69.24974822998047" y="271.9958801269531" width="139.24832153320312" height="19.005167961120605" fill="black" rx="2"/><rect x="70" y="287.9958801269531" width="116.06065368652344" height="19.005167961120605" fill="black" rx="2"/><rect x="70" y="305.9958801269531" width="86.72933197021484" height="19.005167961120605" fill="black" rx="2"/><rect x="70" y="323.9958801269531" width="144.13673400878906" height="19.005167961120605" fill="black" rx="2"/><rect x="70" y="346.24664306640625" width="171.2749786376953" height="16.754392623901367" fill="black" rx="2"/><rect x="290.0000305175781" y="213.4963836669922" width="118.90927124023438" height="16.754392623901367" fill="black" rx="2"/><rect x="290.0000305175781" y="235.74510192871094" width="112.83686065673828" height="21.255943298339844" fill="black" rx="2"/><rect x="289.249755859375" y="253.99586486816406" width="132.36702728271484" height="19.005167961120605" fill="black" rx="2"/><rect x="289.249755859375" y="269.9958801269531" width="106.73442077636719" height="19.005167961120605" fill="black" rx="2"/><rect x="289.249755859375" y="287.9958801269531" width="100.07715606689453" height="19.005167961120605" fill="black" rx="2"/><rect x="290.0000305175781" y="303.9958801269531" width="120.90718078613281" height="19.005167961120605" fill="black" rx="2"/><rect x="289.249755859375" y="319.9958801269531" width="140.8123779296875" height="19.005167961120605" fill="black" rx="2"/><rect x="290.0000305175781" y="346.24664306640625" width="116.85778045654297" height="16.754392623901367" fill="black" rx="2"/><rect x="530" y="213.4963836669922" width="135.56888580322266" height="16.754392623901367" fill="black" rx="2"/><rect x="530" y="235.74510192871094" width="99.7425308227539" height="21.255943298339844" fill="black" rx="2"/><rect x="529.249755859375" y="253.99586486816406" width="118.31143188476562" height="19.005167961120605" fill="black" rx="2"/><rect x="530" y="271.9958801269531" width="93.29499816894531" height="19.005167961120605" fill="black" rx="2"/><rect x="530" y="287.9958801269531" width="138.84974670410156" height="19.005167961120605" fill="black" rx="2"/><rect x="530" y="305.9958801269531" width="144.00778198242188" height="19.005167961120605" fill="black" rx="2"/><rect x="530" y="346.24664306640625" width="153.13983154296875" height="16.754392623901367" fill="black" rx="2"/><rect x="106.00000762939453" y="168.9969024658203" width="62.9447021484375" height="15.253875732421875" fill="black" rx="2"/><rect x="391" y="171.9969024658203" width="62.9447021484375" height="15.253875732421875" fill="black" rx="2"/><rect x="175.55731201171875" y="270.9969177246094" width="68.44269180297852" height="15.253875732421875" fill="black" rx="2"/><rect x="473.0296630859375" y="270.9969177246094" width="74.44086456298828" height="15.253875732421875" fill="black" rx="2"/><rect x="624" y="166.9969024658203" width="30.48535919189453" height="15.253875732421875" fill="black" rx="2"/><rect x="32" y="395.49639892578125" width="549.9741821289062" height="16.754392623901367" fill="black" rx="2"/><rect x="16.000001907348633" y="432.9948425292969" width="317.9869384765625" height="22.756460189819336" fill="black" rx="2"/><rect x="32" y="471.9958801269531" width="155.75686645507812" height="19.005167961120605" fill="black" rx="2"/><rect x="72.81958770751953" y="499.7450866699219" width="114.36084747314453" height="21.255943298339844" fill="black" rx="2"/><rect x="58.201271057128906" y="517.995849609375" width="143.59747314453125" height="19.005167961120605" fill="black" rx="2"/><rect x="277.4442138671875" y="499.7450866699219" width="105.73107147216797" height="21.255943298339844" fill="black" rx="2"/><rect x="276.60601806640625" y="517.995849609375" width="106.78792572021484" height="19.005167961120605" fill="black" rx="2"/><rect x="32" y="573.9959106445312" width="194.6736602783203" height="19.005167961120605" fill="black" rx="2"/><rect x="6.260431289672852" y="7.745090484619141" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="32" y="2.246641159057617" width="68.47785949707031" height="16.754392623901367" fill="black" rx="2"/><rect x="32" y="16.496383666992188" width="86.05300903320312" height="16.754392623901367" fill="black" rx="2"/><rect x="32" y="29.49638557434082" width="69.57589721679688" height="16.754392623901367" fill="black" rx="2"/><rect x="176.26043701171875" y="7.745090484619141" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="202" y="2.246641159057617" width="68.47785949707031" height="16.754392623901367" fill="black" rx="2"/><rect x="202" y="16.496383666992188" width="68.56454467773438" height="16.754392623901367" fill="black" rx="2"/><rect x="202" y="29.49638557434082" width="114.6304702758789" height="16.754392623901367" fill="black" rx="2"/><rect x="366.26043701171875" y="7.745090484619141" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="392" y="2.246641159057617" width="74.52681732177734" height="16.754392623901367" fill="black" rx="2"/><rect x="392" y="16.496383666992188" width="84.06916809082031" height="16.754392623901367" fill="black" rx="2"/><rect x="391.249755859375" y="29.49638557434082" width="70.3535041809082" height="16.754392623901367" fill="black" rx="2"/><rect x="556.2604370117188" y="7.745090484619141" width="15.502583980560303" height="21.255943298339844" fill="black" rx="2"/><rect x="582" y="2.246641159057617" width="80.57577514648438" height="16.754392623901367" fill="black" rx="2"/><rect x="582" y="16.496383666992188" width="50.74421310424805" height="16.754392623901367" fill="black" rx="2"/><rect x="582" y="29.49638557434082" width="92.34545135498047" height="16.754392623901367" fill="black" rx="2"/><rect x="32" y="657.4963989257812" width="466.4830322265625" height="16.754392623901367" fill="black" rx="2"/><rect x="16.000001907348633" y="690.994873046875" width="325.75787353515625" height="22.756460189819336" fill="black" rx="2"/><rect x="6.260431289672852" y="-2.254909098148346" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="-3.7533587217330933" width="159.18878173828125" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="9.496383666992188" width="243.7100830078125" height="16.754393577575684" fill="black" rx="2"/><rect x="6.260431289672852" y="37.74509048461914" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="36.246639251708984" width="219.65492248535156" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="49.49638366699219" width="262.8533935546875" height="16.754392623901367" fill="black" rx="2"/><rect x="6.260431289672852" y="77.7450942993164" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="76.24664306640625" width="231.75283813476562" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="89.49639129638672" width="234.60537719726562" height="16.754392623901367" fill="black" rx="2"/><rect x="6.260431289672852" y="117.74508666992188" width="15.502583980560303" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="116.24664306640625" width="183.37289428710938" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="129.4963836669922" width="275.95947265625" height="16.754392623901367" fill="black" rx="2"/><rect x="6.260431289672852" y="157.74510192871094" width="15.479138374328613" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="156.24664306640625" width="364.79473876953125" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="169.4963836669922" width="246.47744750976562" height="16.754392623901367" fill="black" rx="2"/><rect x="6.260431289672852" y="197.74510192871094" width="15.502583980560303" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="196.24664306640625" width="231.75283813476562" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="209.49639892578125" width="382.0926513671875" height="16.754392623901367" fill="black" rx="2"/><rect x="6.260431289672852" y="237.74510192871094" width="15.502583980560303" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="236.24664306640625" width="213.60597229003906" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="249.49639892578125" width="245.68089294433594" height="16.754392623901367" fill="black" rx="2"/><rect x="6.260431289672852" y="277.7451171875" width="15.502583980560303" height="21.255943298339844" fill="black" rx="2"/><rect x="36.000003814697266" y="276.24664306640625" width="225.70388793945312" height="16.754392623901367" fill="black" rx="2"/><rect x="36.000003814697266" y="289.49639892578125" width="295.80615234375" height="16.754392623901367" fill="black" rx="2"/><rect x="32" y="1039.496337890625" width="467.6650390625" height="16.754392623901367" fill="black" rx="2"/></mask></defs>
-
-  
+    <marker id="arrow2-cloud" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a76b8"/>
+    </marker>
+  </defs>
 
   <!-- ============== PANEL 1: ARCHITECTURE ============== -->
-  <text x="20" y="26" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:14px;font-weight:600;text-anchor:start;dominant-baseline:auto">1 · Arquitectura del despliegue (con RAG)</text>
+  <text x="20" y="26" fill="#1a1a1a" font-size="14" font-weight="600">1 · Arquitectura del despliegue (RAG + LiteLLM proxy)</text>
 
-  <rect x="20" y="40" width="720" height="380" rx="6" style="fill:rgb(250, 250, 250);stroke:rgb(212, 212, 212);color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="36" y="62" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:500;text-anchor:start;dominant-baseline:auto">HOST · WINDOWS + DOCKER DESKTOP</text>
+  <!-- Host -->
+  <rect x="20" y="40" width="840" height="440" rx="6" fill="#fafafa" stroke="#d4d4d4"/>
+  <text x="36" y="62" fill="#6b6b6b" font-size="11" font-weight="500">HOST · WINDOWS + DOCKER DESKTOP</text>
 
-  <!-- Cliente (fuera de docker) -->
-  <rect x="40" y="80" width="125" height="60" rx="4" style="fill:rgb(255, 255, 255);stroke:rgb(200, 200, 200);color:rgb(255, 255, 255);stroke-width:1.2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="102.5" y="105" text-anchor="middle" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:auto">Cliente</text>
-  <text x="102.5" y="122" text-anchor="middle" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:middle;dominant-baseline:auto">browser · curl · SDK</text>
+  <!-- Cliente -->
+  <rect x="40" y="80" width="125" height="60" rx="4" fill="#ffffff" stroke="#c8c8c8" stroke-width="1.2"/>
+  <text x="102.5" y="105" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="600">Cliente</text>
+  <text x="102.5" y="122" text-anchor="middle" fill="#6b6b6b" font-size="11">browser · curl · SDK</text>
 
-  <!-- docs/ folder (bind mount) -->
-  <rect x="245" y="80" width="170" height="60" rx="4" style="fill:rgb(255, 255, 255);stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="330" y="98" text-anchor="middle" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:auto">📁 docs/</text>
-  <text x="330" y="115" text-anchor="middle" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:middle;dominant-baseline:auto">bind-mount → /app/docs</text>
-  <text x="330" y="131" text-anchor="middle" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:middle;dominant-baseline:auto">.md .txt .pdf .html</text>
-  <text x="335" y="74" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:9px;font-weight:700;text-anchor:middle;dominant-baseline:auto">NUEVO EN FASE 3</text>
+  <!-- docs/ bind mount -->
+  <rect x="185" y="80" width="170" height="60" rx="4" fill="#ffffff" stroke="#c96342" stroke-width="1.5"/>
+  <text x="270" y="98" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="600">📁 docs/</text>
+  <text x="270" y="115" text-anchor="middle" fill="#6b6b6b" font-size="11">bind-mount → /app/docs</text>
+  <text x="270" y="131" text-anchor="middle" fill="#6b6b6b" font-size="11">.md .txt .pdf .html</text>
+  <text x="270" y="74" text-anchor="middle" fill="#c96342" font-size="9" font-weight="700">RAG</text>
+
+  <!-- Cloud LLM APIs (fuera del host) -->
+  <rect x="385" y="80" width="265" height="60" rx="4" fill="#f4f8fc" stroke="#4a76b8" stroke-width="1.2" stroke-dasharray="3 2"/>
+  <text x="517.5" y="103" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="600">Cloud LLM APIs</text>
+  <text x="517.5" y="120" text-anchor="middle" fill="#6b6b6b" font-size="11">api.openai.com · api.anthropic.com</text>
+  <text x="517.5" y="134" text-anchor="middle" fill="#4a76b8" font-size="10" font-weight="600">opcional · si .env tiene API key</text>
 
   <!-- GPU -->
-  <rect x="595" y="80" width="125" height="60" rx="4" style="fill:rgb(255, 255, 255);stroke:rgb(200, 200, 200);color:rgb(255, 255, 255);stroke-width:1.2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="657.5" y="105" text-anchor="middle" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:auto">GPU</text>
-  <text x="657.5" y="122" text-anchor="middle" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:middle;dominant-baseline:auto">RTX 4060 · 8 GB</text>
+  <rect x="715" y="80" width="125" height="60" rx="4" fill="#ffffff" stroke="#c8c8c8" stroke-width="1.2"/>
+  <text x="777.5" y="105" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="600">GPU</text>
+  <text x="777.5" y="122" text-anchor="middle" fill="#6b6b6b" font-size="11">RTX 4060 · 8 GB</text>
 
   <!-- Docker network -->
-  <rect x="40" y="170" width="700" height="220" rx="6" style="fill:rgb(255, 255, 255);stroke:rgb(212, 212, 212);color:rgb(255, 255, 255);stroke-width:1px;stroke-dasharray:4px, 3px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="56" y="190" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:500;text-anchor:start;dominant-baseline:auto">DOCKER NETWORK · default</text>
+  <rect x="40" y="170" width="820" height="290" rx="6" fill="#ffffff" stroke="#d4d4d4" stroke-dasharray="4 3"/>
+  <text x="56" y="190" fill="#6b6b6b" font-size="11" font-weight="500">DOCKER NETWORK · default</text>
 
-  <!-- Qdrant container (NEW) -->
-  <rect x="60" y="210" width="200" height="160" rx="5" style="fill:rgb(255, 255, 255);stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <rect x="60" y="210" width="200" height="22" rx="5" style="fill:color(srgb 0.788235 0.388235 0.258824 / 0.18);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="74" y="226" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:700;text-anchor:start;dominant-baseline:auto">CONTAINER · llmops-qdrant ★</text>
-  <text x="74" y="252" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:start;dominant-baseline:auto">Qdrant 1.12</text>
-  <text x="74" y="268" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">vector DB</text>
-  <text x="74" y="286" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">/api/tags · /points · /search</text>
-  <text x="74" y="302" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">colección llmops_docs</text>
-  <text x="74" y="320" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">cosine · dim 768</text>
-  <text x="74" y="338" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">índices: doc_id, source, hash</text>
-  <text x="74" y="358" font-family="ui-monospace, monospace" font-size="10" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">:6333 (HTTP) · :6334 (gRPC)</text>
+  <!-- Qdrant -->
+  <rect x="60" y="210" width="190" height="230" rx="5" fill="#ffffff" stroke="#c96342" stroke-width="1.5"/>
+  <rect x="60" y="210" width="190" height="22" rx="5" fill="#ececec"/>
+  <text x="74" y="226" fill="#333" font-size="10" font-weight="600">CONTAINER · llmops-qdrant</text>
+  <text x="74" y="255" fill="#1a1a1a" font-size="13" font-weight="600">Qdrant 1.12</text>
+  <text x="74" y="273" fill="#6b6b6b" font-size="11">vector DB</text>
+  <text x="74" y="291" fill="#6b6b6b" font-size="11">/points · /search</text>
+  <text x="74" y="309" fill="#6b6b6b" font-size="11">colección llmops_docs</text>
+  <text x="74" y="327" fill="#6b6b6b" font-size="11">cosine · dim 768</text>
+  <text x="74" y="345" fill="#6b6b6b" font-size="11">índices: doc_id, source</text>
+  <text x="74" y="363" fill="#6b6b6b" font-size="11">volumen qdrant_data</text>
+  <text x="74" y="427" font-family="ui-monospace, monospace" fill="#6b6b6b" font-size="10">:6333 (HTTP) · :6334 (gRPC)</text>
 
-  <!-- API container -->
-  <rect x="280" y="210" width="220" height="160" rx="5" style="fill:rgb(255, 255, 255);stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <rect x="280" y="210" width="220" height="22" rx="5" style="fill:rgb(236, 236, 236);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="294" y="226" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:600;text-anchor:start;dominant-baseline:auto">CONTAINER · llmops-api</text>
-  <text x="294" y="252" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:start;dominant-baseline:auto">FastAPI + Uvicorn</text>
-  <text x="294" y="268" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">/v1/chat /v1/embeddings</text>
-  <text x="294" y="284" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">/v1/models /healthz</text>
-  <text x="294" y="302" fill="var(--accent-secondary-100, #c96342)" font-weight="600" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:600;text-anchor:start;dominant-baseline:auto">/v1/rag/* ← nuevo</text>
-  <text x="294" y="318" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">middleware · auth · SSE</text>
-  <text x="294" y="334" fill="var(--accent-secondary-100, #c96342)" font-weight="600" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:600;text-anchor:start;dominant-baseline:auto">watcher de docs/ ← nuevo</text>
-  <text x="294" y="358" font-family="ui-monospace, monospace" font-size="10" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">:8000  ←→  host:8000</text>
+  <!-- API -->
+  <rect x="260" y="210" width="190" height="230" rx="5" fill="#ffffff" stroke="#c96342" stroke-width="1.5"/>
+  <rect x="260" y="210" width="190" height="22" rx="5" fill="#ececec"/>
+  <text x="274" y="226" fill="#333" font-size="10" font-weight="600">CONTAINER · llmops-api</text>
+  <text x="274" y="255" fill="#1a1a1a" font-size="13" font-weight="600">FastAPI + Uvicorn</text>
+  <text x="274" y="273" fill="#6b6b6b" font-size="11">/v1/chat · /v1/embeddings</text>
+  <text x="274" y="291" fill="#6b6b6b" font-size="11">/v1/models /healthz</text>
+  <text x="274" y="309" fill="#c96342" font-size="11" font-weight="600">/v1/rag/* (Fase 3)</text>
+  <text x="274" y="327" fill="#c96342" font-size="11" font-weight="600">/v1/agents/run (Fase 4)</text>
+  <text x="274" y="345" fill="#6b6b6b" font-size="11">middleware · auth · SSE</text>
+  <text x="274" y="363" fill="#6b6b6b" font-size="11">LLMClient (openai SDK)</text>
+  <text x="274" y="381" fill="#6b6b6b" font-size="11">watcher de docs/ (asyncio)</text>
+  <text x="274" y="427" font-family="ui-monospace, monospace" fill="#6b6b6b" font-size="10">:8000 ←→ host:8000</text>
 
-  <!-- Ollama container -->
-  <rect x="520" y="210" width="200" height="160" rx="5" style="fill:rgb(255, 255, 255);stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <rect x="520" y="210" width="200" height="22" rx="5" style="fill:rgb(236, 236, 236);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="534" y="226" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:600;text-anchor:start;dominant-baseline:auto">CONTAINER · llmops-ollama</text>
-  <text x="534" y="252" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:start;dominant-baseline:auto">Ollama runtime</text>
-  <text x="534" y="268" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">/api/chat · /api/embed</text>
-  <text x="534" y="286" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">llama3.1:8b (chat)</text>
-  <text x="534" y="302" fill="var(--accent-secondary-100, #c96342)" font-weight="600" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:600;text-anchor:start;dominant-baseline:auto">nomic-embed-text ← RAG</text>
-  <text x="534" y="320" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">GGUF en VRAM (keep_alive)</text>
-  <text x="534" y="358" font-family="ui-monospace, monospace" font-size="10" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">:11434 → GPU passthrough</text>
+  <!-- LiteLLM (NEW) -->
+  <rect x="460" y="210" width="190" height="230" rx="5" fill="#ffffff" stroke="#c96342" stroke-width="1.5"/>
+  <rect x="460" y="210" width="190" height="22" rx="5" fill="#fbe6dd"/>
+  <text x="474" y="226" fill="#c96342" font-size="10" font-weight="700">CONTAINER · llmops-litellm ★</text>
+  <text x="474" y="255" fill="#1a1a1a" font-size="13" font-weight="600">LiteLLM proxy</text>
+  <text x="474" y="273" fill="#6b6b6b" font-size="11">control plane:</text>
+  <text x="474" y="291" fill="#6b6b6b" font-size="11">· routing por alias</text>
+  <text x="474" y="309" fill="#6b6b6b" font-size="11">· master_key + retries</text>
+  <text x="474" y="327" fill="#6b6b6b" font-size="11">· cost tracking</text>
+  <text x="474" y="345" fill="#6b6b6b" font-size="11">· streaming SSE OpenAI</text>
+  <text x="474" y="367" fill="#6b6b6b" font-size="11" font-style="italic">litellm-config.yaml</text>
+  <text x="474" y="385" fill="#6b6b6b" font-size="11" font-style="italic">aliases: qwen-local,</text>
+  <text x="474" y="400" fill="#6b6b6b" font-size="11" font-style="italic">gpt-4o-mini, claude-… </text>
+  <text x="474" y="427" font-family="ui-monospace, monospace" fill="#6b6b6b" font-size="10">:4000 (solo red interna)</text>
+
+  <!-- Ollama -->
+  <rect x="660" y="210" width="190" height="230" rx="5" fill="#ffffff" stroke="#c96342" stroke-width="1.5"/>
+  <rect x="660" y="210" width="190" height="22" rx="5" fill="#ececec"/>
+  <text x="674" y="226" fill="#333" font-size="10" font-weight="600">CONTAINER · llmops-ollama</text>
+  <text x="674" y="255" fill="#1a1a1a" font-size="13" font-weight="600">Ollama runtime</text>
+  <text x="674" y="273" fill="#6b6b6b" font-size="11">/api/chat · /api/embed</text>
+  <text x="674" y="291" fill="#6b6b6b" font-size="11">llama3.1:8b (chat)</text>
+  <text x="674" y="309" fill="#6b6b6b" font-size="11">qwen2.5:7b (agente)</text>
+  <text x="674" y="327" fill="#c96342" font-size="11" font-weight="600">nomic-embed-text (RAG)</text>
+  <text x="674" y="345" fill="#6b6b6b" font-size="11">GGUF en VRAM</text>
+  <text x="674" y="363" fill="#6b6b6b" font-size="11">volumen ollama_data</text>
+  <text x="674" y="427" font-family="ui-monospace, monospace" fill="#6b6b6b" font-size="10">:11434 → GPU passthrough</text>
 
   <!-- Arrows architecture -->
-  <!-- Client → API -->
-  <path d="M 102.5 145 L 102.5 260 L 280 260" marker-end="url(#arrow2)" mask="url(#imagine-text-gaps-irvj6j)" style="fill:none;stroke:rgb(119, 119, 119);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="110" y="180" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">HTTP :8000</text>
+  <!-- Cliente → API -->
+  <path d="M 102.5 145 L 102.5 300 L 260 300" stroke="#777" stroke-width="1.5" fill="none" marker-end="url(#arrow2)"/>
+  <text x="110" y="180" font-family="ui-monospace, monospace" fill="#333" font-size="10">HTTP :8000</text>
 
   <!-- docs → API (bind mount) -->
-  <path d="M 330 145 L 330 165 L 380 165 L 380 210" stroke-dasharray="3 2" marker-end="url(#arrow2-accent)" mask="url(#imagine-text-gaps-irvj6j)" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-dasharray:3px, 2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="395" y="183" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:10px;font-weight:600;text-anchor:start;dominant-baseline:auto">bind mount</text>
+  <path d="M 270 145 L 270 175 L 320 175 L 320 210" stroke="#c96342" stroke-width="1.5" stroke-dasharray="3 2" fill="none" marker-end="url(#arrow2-accent)"/>
+  <text x="328" y="200" font-family="ui-monospace, monospace" fill="#c96342" font-size="10" font-weight="600">bind mount</text>
 
   <!-- API ↔ Qdrant -->
-  <path d="M 280 290 L 260 290" marker-end="url(#arrow2-accent)" marker-start="url(#arrow2-accent)" mask="url(#imagine-text-gaps-irvj6j)" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="240" y="282" text-anchor="end" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:10px;font-weight:600;text-anchor:end;dominant-baseline:auto">qdrant:6333</text>
+  <path d="M 260 270 L 250 270" stroke="#c96342" stroke-width="1.8" fill="none" marker-end="url(#arrow2-accent)" marker-start="url(#arrow2-accent)"/>
+  <text x="246" y="262" text-anchor="end" font-family="ui-monospace, monospace" fill="#c96342" font-size="10" font-weight="600">qdrant:6333</text>
 
-  <!-- API → Ollama -->
-  <path d="M 500 290 L 520 290" marker-end="url(#arrow2)" style="fill:none;stroke:rgb(119, 119, 119);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="510" y="282" text-anchor="middle" font-size="9" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:10px;font-weight:400;text-anchor:middle;dominant-baseline:auto">ollama:11434</text>
+  <!-- API → LiteLLM -->
+  <path d="M 450 270 L 460 270" stroke="#c96342" stroke-width="1.8" fill="none" marker-end="url(#arrow2-accent)"/>
+  <text x="438" y="262" text-anchor="end" font-family="ui-monospace, monospace" fill="#c96342" font-size="10" font-weight="600">OpenAI fmt</text>
+
+  <!-- LiteLLM → Ollama -->
+  <path d="M 650 270 L 660 270" stroke="#777" stroke-width="1.5" fill="none" marker-end="url(#arrow2)"/>
+  <text x="652" y="262" font-family="ui-monospace, monospace" fill="#333" font-size="10">11434</text>
+
+  <!-- LiteLLM → Cloud -->
+  <path d="M 555 210 C 555 175, 517.5 165, 517.5 145" stroke="#4a76b8" stroke-width="1.5" stroke-dasharray="4 2" fill="none" marker-end="url(#arrow2-cloud)"/>
+  <text x="525" y="195" font-family="ui-monospace, monospace" fill="#4a76b8" font-size="10" font-weight="600">HTTPS</text>
 
   <!-- Ollama → GPU -->
-  <path d="M 620 210 L 620 145" marker-end="url(#arrow2)" style="fill:none;stroke:rgb(119, 119, 119);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="628" y="178" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">CUDA</text>
+  <path d="M 770 210 L 770 145" stroke="#777" stroke-width="1.5" fill="none" marker-end="url(#arrow2)"/>
+  <text x="776" y="178" font-family="ui-monospace, monospace" fill="#333" font-size="10">CUDA</text>
 
-  <text x="36" y="408" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">★ Nuevo en Fase 3 — Qdrant + watcher de docs/. La API queda OpenAI-compatible y los endpoints /v1/rag/* viven aparte.</text>
+  <text x="36" y="472" fill="#6b6b6b" font-size="10">★ La API solo habla con LiteLLM (también para embeddings del RAG). El YAML del proxy es la única fuente de verdad de qué modelos existen.</text>
 
   <!-- ============== PANEL 2: INGESTA ============== -->
-  <text x="20" y="450" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:14px;font-weight:600;text-anchor:start;dominant-baseline:auto">2 · Indexación: cómo un archivo acaba en Qdrant</text>
+  <text x="20" y="510" fill="#1a1a1a" font-size="14" font-weight="600">2 · Indexación: cómo un archivo acaba en Qdrant</text>
 
-  <rect x="20" y="464" width="720" height="190" rx="6" style="fill:rgb(250, 250, 250);stroke:rgb(212, 212, 212);color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <rect x="20" y="524" width="840" height="190" rx="6" fill="#fafafa" stroke="#d4d4d4"/>
 
-  <!-- Two entry points -->
-  <text x="36" y="486" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:500;text-anchor:start;dominant-baseline:auto">DOS PUNTOS DE ENTRADA</text>
+  <text x="36" y="546" fill="#6b6b6b" font-size="11" font-weight="500">DOS PUNTOS DE ENTRADA</text>
 
-  <!-- Entry 1: drag&drop -->
-  <rect x="40" y="498" width="180" height="42" rx="5" style="fill:rgb(255, 255, 255);stroke:rgb(200, 200, 200);color:rgb(255, 255, 255);stroke-width:1.2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="130" y="516" text-anchor="middle" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:auto">drag &amp; drop en UI</text>
-  <text x="130" y="532" text-anchor="middle" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:middle;dominant-baseline:auto">→ POST /v1/rag/documents</text>
+  <rect x="40" y="558" width="200" height="42" rx="5" fill="#ffffff" stroke="#c8c8c8" stroke-width="1.2"/>
+  <text x="140" y="576" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="600">drag &amp; drop en UI</text>
+  <text x="140" y="592" text-anchor="middle" fill="#6b6b6b" font-size="11">→ POST /v1/rag/documents</text>
 
-  <!-- Entry 2: docs folder -->
-  <rect x="240" y="498" width="180" height="42" rx="5" style="fill:rgb(255, 255, 255);stroke:rgb(200, 200, 200);color:rgb(255, 255, 255);stroke-width:1.2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="330" y="516" text-anchor="middle" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:auto">archivo en docs/</text>
-  <text x="330" y="532" text-anchor="middle" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:400;text-anchor:middle;dominant-baseline:auto">→ watchdog dispara</text>
+  <rect x="260" y="558" width="200" height="42" rx="5" fill="#ffffff" stroke="#c8c8c8" stroke-width="1.2"/>
+  <text x="360" y="576" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="600">archivo en docs/</text>
+  <text x="360" y="592" text-anchor="middle" fill="#6b6b6b" font-size="11">→ watchdog dispara</text>
 
-  <!-- Convergencia -->
-  <path d="M 130 540 L 130 568 L 460 568" marker-end="url(#arrow2-accent)" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <path d="M 330 540 L 330 568" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <path d="M 140 600 L 140 626 L 480 626" stroke="#c96342" stroke-width="1.5" fill="none" marker-end="url(#arrow2-accent)"/>
+  <path d="M 360 600 L 360 626" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-  <!-- Pipeline -->
-  <text x="36" y="588" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:11px;font-weight:500;text-anchor:start;dominant-baseline:auto">PIPELINE COMÚN (rag/indexer.py)</text>
+  <text x="36" y="646" fill="#6b6b6b" font-size="11" font-weight="500">PIPELINE COMÚN (rag/indexer.py)</text>
 
-  <g transform="translate(40, 600)" style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
+  <g transform="translate(40, 658)">
     <!-- Step 1 -->
-    <circle cx="14" cy="20" r="13" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="24" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">1</text>
-    <text x="36" y="14" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">parsers.py</text>
-    <text x="36" y="29" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">.pdf .md .html .txt</text>
-    <text x="36" y="42" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">→ texto plano</text>
+    <circle cx="14" cy="20" r="13" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="24" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">1</text>
+    <text x="36" y="14" font-family="ui-monospace, monospace" fill="#333" font-size="11">parsers.py</text>
+    <text x="36" y="29" fill="#6b6b6b" font-size="10">.pdf .md .html .txt</text>
+    <text x="36" y="42" fill="#6b6b6b" font-size="10">→ texto plano</text>
 
-    <path d="M 142 20 L 168 20" marker-end="url(#arrow2-accent)" mask="url(#imagine-text-gaps-irvj6j)" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 170 20 L 200 20" stroke="#c96342" stroke-width="1.5" fill="none" marker-end="url(#arrow2-accent)"/>
 
     <!-- Step 2 -->
-    <circle cx="184" cy="20" r="13" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="184" y="24" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">2</text>
-    <text x="206" y="14" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">chunker.py</text>
-    <text x="206" y="29" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">recursive split</text>
-    <text x="206" y="42" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">1000 chars · overlap 150</text>
+    <circle cx="218" cy="20" r="13" fill="#c96342" opacity="0.15"/>
+    <text x="218" y="24" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">2</text>
+    <text x="240" y="14" font-family="ui-monospace, monospace" fill="#333" font-size="11">chunker.py</text>
+    <text x="240" y="29" fill="#6b6b6b" font-size="10">recursive split</text>
+    <text x="240" y="42" fill="#6b6b6b" font-size="10">1000 chars · overlap 150</text>
 
-    <path d="M 332 20 L 358 20" marker-end="url(#arrow2-accent)" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 390 20 L 420 20" stroke="#c96342" stroke-width="1.5" fill="none" marker-end="url(#arrow2-accent)"/>
 
     <!-- Step 3 -->
-    <circle cx="374" cy="20" r="13" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="374" y="24" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">3</text>
-    <text x="396" y="14" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">embedder.py</text>
-    <text x="396" y="29" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">→ Ollama embed</text>
-    <text x="396" y="42" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">vectores 768d</text>
+    <circle cx="438" cy="20" r="13" fill="#c96342" opacity="0.15"/>
+    <text x="438" y="24" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">3</text>
+    <text x="460" y="14" font-family="ui-monospace, monospace" fill="#333" font-size="11">embedder.py</text>
+    <text x="460" y="29" fill="#6b6b6b" font-size="10">LLMClient.embed → LiteLLM</text>
+    <text x="460" y="42" fill="#6b6b6b" font-size="10">→ nomic-embed (Ollama)</text>
 
-    <path d="M 522 20 L 548 20" marker-end="url(#arrow2-accent)" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 638 20 L 668 20" stroke="#c96342" stroke-width="1.5" fill="none" marker-end="url(#arrow2-accent)"/>
 
     <!-- Step 4 -->
-    <circle cx="564" cy="20" r="13" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="564" y="24" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">4</text>
-    <text x="586" y="14" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">store.upsert</text>
-    <text x="586" y="29" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">→ Qdrant</text>
-    <text x="586" y="42" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">id = sha256(chunk)</text>
+    <circle cx="686" cy="20" r="13" fill="#c96342" opacity="0.15"/>
+    <text x="686" y="24" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">4</text>
+    <text x="708" y="14" font-family="ui-monospace, monospace" fill="#333" font-size="11">store.upsert</text>
+    <text x="708" y="29" fill="#6b6b6b" font-size="10">→ Qdrant</text>
+    <text x="708" y="42" fill="#6b6b6b" font-size="10">id = sha256(chunk)</text>
   </g>
 
-  <text x="36" y="670" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">id determinista por hash del chunk → re-indexar el mismo doc no duplica · borrar por source es atómico</text>
+  <text x="36" y="734" fill="#6b6b6b" font-size="10">id determinista por hash del chunk → re-indexar el mismo doc no duplica · borrar por source es atómico</text>
 
   <!-- ============== PANEL 3: RAG QUERY FLOW ============== -->
-  <text x="20" y="708" style="fill:rgb(26, 26, 26);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:14px;font-weight:600;text-anchor:start;dominant-baseline:auto">3 · Mensaje con toggle RAG activo: viaje completo</text>
+  <text x="20" y="770" fill="#1a1a1a" font-size="14" font-weight="600">3 · Mensaje con toggle RAG activo: viaje completo</text>
 
-  <rect x="20" y="722" width="720" height="340" rx="6" style="fill:rgb(250, 250, 250);stroke:rgb(212, 212, 212);color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <rect x="20" y="784" width="840" height="340" rx="6" fill="#fafafa" stroke="#d4d4d4"/>
 
-  <!-- Sequence vertical -->
-  <g transform="translate(40, 745)" style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
-    <!-- Step 1 -->
-    <circle cx="14" cy="10" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="14" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">1</text>
-    <text x="40" y="8" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">UI: usuario envía mensaje</text>
-    <text x="40" y="22" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">si toggle RAG está on → primero pasamos por el RAG</text>
+  <g transform="translate(40, 807)">
+    <!-- 1 -->
+    <circle cx="14" cy="10" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="14" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">1</text>
+    <text x="40" y="8" font-family="ui-monospace, monospace" fill="#333" font-size="11">UI: usuario envía mensaje</text>
+    <text x="40" y="22" fill="#6b6b6b" font-size="10">si toggle RAG está on → primero pasamos por el RAG</text>
 
-    <!-- Arrow -->
-    <path d="M 14 26 L 14 38" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 26 L 14 38" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 2 -->
-    <circle cx="14" cy="50" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="54" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">2</text>
-    <text x="40" y="48" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">POST /v1/rag/query  {query, top_k:5}</text>
-    <text x="40" y="62" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">la API embebe la query con nomic-embed-text vía Ollama</text>
+    <!-- 2 -->
+    <circle cx="14" cy="50" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="54" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">2</text>
+    <text x="40" y="48" font-family="ui-monospace, monospace" fill="#333" font-size="11">POST /v1/rag/query  {query, top_k:5}</text>
+    <text x="40" y="62" fill="#6b6b6b" font-size="10">la API embebe la query con nomic-embed vía LiteLLM → Ollama</text>
 
-    <path d="M 14 66 L 14 78" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 66 L 14 78" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 3 -->
-    <circle cx="14" cy="90" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="94" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">3</text>
-    <text x="40" y="88" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">Qdrant: query_points(vector, limit=5)</text>
-    <text x="40" y="102" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">cosine similarity → top-5 chunks con score y source</text>
+    <!-- 3 -->
+    <circle cx="14" cy="90" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="94" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">3</text>
+    <text x="40" y="88" font-family="ui-monospace, monospace" fill="#333" font-size="11">Qdrant: query_points(vector, limit=5)</text>
+    <text x="40" y="102" fill="#6b6b6b" font-size="10">cosine similarity → top-5 chunks con score y source</text>
 
-    <path d="M 14 106 L 14 118" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 106 L 14 118" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 4 -->
-    <circle cx="14" cy="130" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="134" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">4</text>
-    <text x="40" y="128" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">retriever.as_system_message()</text>
-    <text x="40" y="142" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">formatea los chunks como mensaje system con citas [source]</text>
+    <!-- 4 -->
+    <circle cx="14" cy="130" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="134" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">4</text>
+    <text x="40" y="128" font-family="ui-monospace, monospace" fill="#333" font-size="11">retriever.as_system_message()</text>
+    <text x="40" y="142" fill="#6b6b6b" font-size="10">formatea los chunks como mensaje system con citas [source]</text>
 
-    <path d="M 14 146 L 14 158" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 146 L 14 158" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 5 -->
-    <circle cx="14" cy="170" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="174" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">5</text>
-    <text x="40" y="168" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">UI construye messages = [sysUser, sysRAG, ...history, user]</text>
-    <text x="40" y="182" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">el system del usuario y el del RAG conviven sin pisarse</text>
+    <!-- 5 -->
+    <circle cx="14" cy="170" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="174" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">5</text>
+    <text x="40" y="168" font-family="ui-monospace, monospace" fill="#333" font-size="11">UI construye messages = [sysUser, sysRAG, ...history, user]</text>
+    <text x="40" y="182" fill="#6b6b6b" font-size="10">el system del usuario y el del RAG conviven sin pisarse</text>
 
-    <path d="M 14 186 L 14 198" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 186 L 14 198" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 6 -->
-    <circle cx="14" cy="210" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="214" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">6</text>
-    <text x="40" y="208" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">POST /v1/chat/completions  stream:true</text>
-    <text x="40" y="222" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">la API llama a Ollama con todo el contexto · KV-cache compartida con turnos previos</text>
+    <!-- 6 -->
+    <circle cx="14" cy="210" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="214" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">6</text>
+    <text x="40" y="208" font-family="ui-monospace, monospace" fill="#333" font-size="11">POST /v1/chat/completions  stream:true  model:&lt;alias&gt;</text>
+    <text x="40" y="222" fill="#6b6b6b" font-size="10">LLMClient → LiteLLM:4000 · el proxy enruta al backend según el alias</text>
 
-    <path d="M 14 226 L 14 238" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 226 L 14 238" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 7 -->
-    <circle cx="14" cy="250" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="254" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">7</text>
-    <text x="40" y="248" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">Ollama → GPU → tokens en streaming</text>
-    <text x="40" y="262" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">SSE re-envuelto al estilo OpenAI · cancelable con Stop</text>
+    <!-- 7 -->
+    <circle cx="14" cy="250" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="254" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">7</text>
+    <text x="40" y="248" font-family="ui-monospace, monospace" fill="#333" font-size="11">backend (Ollama/OpenAI/Anthropic) → tokens en streaming</text>
+    <text x="40" y="262" fill="#6b6b6b" font-size="10">LiteLLM normaliza el SSE al formato OpenAI · cancelable con Stop</text>
 
-    <path d="M 14 266 L 14 278" style="fill:none;stroke:rgb(201, 99, 66);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <path d="M 14 266 L 14 278" stroke="#c96342" stroke-width="1.5" fill="none"/>
 
-    <!-- Step 8 -->
-    <circle cx="14" cy="290" r="12" fill="var(--accent-secondary-100, #c96342)" opacity="0.15" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:ui-sans-serif, system-ui, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="14" y="294" text-anchor="middle" style="fill:rgb(201, 99, 66);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:auto">8</text>
-    <text x="40" y="288" style="fill:rgb(51, 51, 51);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-monospace, monospace;font-size:11px;font-weight:400;text-anchor:start;dominant-baseline:auto">UI: render texto + badges de fuentes</text>
-    <text x="40" y="302" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">debajo de cada respuesta · TTFT · t/s · "fuentes: file1.md (0.84), …"</text>
+    <!-- 8 -->
+    <circle cx="14" cy="290" r="12" fill="#c96342" opacity="0.15"/>
+    <text x="14" y="294" text-anchor="middle" fill="#c96342" font-size="13" font-weight="700">8</text>
+    <text x="40" y="288" font-family="ui-monospace, monospace" fill="#333" font-size="11">UI: render texto + badges de fuentes</text>
+    <text x="40" y="302" fill="#6b6b6b" font-size="10">debajo de cada respuesta · TTFT · t/s · "fuentes: file1.md (0.84), …"</text>
   </g>
 
-  <text x="36" y="1052" style="fill:rgb(107, 107, 107);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:ui-sans-serif, system-ui, sans-serif;font-size:10px;font-weight:400;text-anchor:start;dominant-baseline:auto">si el toggle RAG está off, los pasos 2-5 se saltan · /v1/chat/completions sigue siendo OpenAI-compatible</text>
+  <text x="36" y="1132" fill="#6b6b6b" font-size="10">Si el toggle RAG está off, los pasos 2-5 se saltan · /v1/chat/completions sigue siendo OpenAI-compatible y va siempre vía LiteLLM.</text>
 </svg>

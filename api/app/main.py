@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.middleware.logging import RequestContextMiddleware, configure_logging
 from app.routers import agents, chat, embeddings, health, rag
 from app.routers import models as models_router
-from app.services.ollama_client import OllamaClient
+from app.services.llm_client import LLMClient
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -25,12 +25,12 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.api_log_level)
 
-    client = OllamaClient(
-        base_url=settings.ollama_host,
-        timeout=settings.ollama_request_timeout,
-        keep_alive=settings.ollama_keep_alive,
+    client = LLMClient(
+        base_url=settings.litellm_base_url,
+        master_key=settings.litellm_master_key,
+        timeout=settings.litellm_request_timeout,
     )
-    app.state.ollama = client
+    app.state.llm = client
     app.state.rag = None
     app.state.watcher = None
 
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("rag.init_failed", extra={"err": str(e)})
 
-    log.info("api.startup", extra={"ollama_host": settings.ollama_host})
+    log.info("api.startup", extra={"litellm_base_url": settings.litellm_base_url})
     try:
         yield
     finally:
@@ -86,8 +86,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="llm_ops API",
-    description="Wrapper OpenAI-compatible delante de Ollama, con RAG sobre Qdrant.",
-    version="0.2.0",
+    description="Wrapper OpenAI-compatible delante de LiteLLM (Ollama/OpenAI/Anthropic), con RAG sobre Qdrant.",
+    version="0.3.0",
     lifespan=lifespan,
 )
 

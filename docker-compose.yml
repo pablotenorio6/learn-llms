@@ -43,6 +43,31 @@ services:
       retries: 10
       start_period: 5s
 
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: llmops-litellm
+    restart: unless-stopped
+    # Sin puerto al host: solo accesible desde la red interna de compose.
+    # Si quieres pegarle con curl desde el host, descomenta y ajusta.
+    # ports:
+    #   - "4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-llmops-changeme}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   api:
     build:
       context: ./api
@@ -54,7 +79,8 @@ services:
     env_file:
       - .env
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-llmops-changeme}
       - QDRANT_HOST=${QDRANT_HOST:-http://qdrant:6333}
     volumes:
       # bench/ se monta para iterar sin rebuild
@@ -62,7 +88,7 @@ services:
       # docs/ es la carpeta vigilada por el watcher (RAG)
       - ./docs:/app/docs
     depends_on:
-      ollama:
+      litellm:
         condition: service_healthy
       qdrant:
         condition: service_healthy

@@ -16,6 +16,7 @@ Proyecto de aprendizaje de despliegue/infraestructura de IA: asistente LLM local
 - **Fase 1** — Wrapper API OpenAI-compatible (FastAPI + SSE streaming + cancelación + middleware de logging)
 - **Fase 3** — RAG sobre Qdrant (Fase 2 se saltó deliberadamente para llegar antes a RAG)
 - **Fase 4** — Tool calling + harness de agente (registry @tool, AgentLoop con SSE events, /v1/agents/run, UI con cards inline)
+- **Multi-proveedor vía LiteLLM proxy** — la API ya no habla con Ollama directo. Habla con un proxy LiteLLM (contenedor sidecar) en formato OpenAI puro. Soporta Ollama local, OpenAI y Anthropic con sólo añadir alias en `litellm-config.yaml`
 
 **Pendientes:**
 - **Fase 2** — Observabilidad (Langfuse self-hosted para trazas LLM, Prometheus + Grafana para métricas de sistema)
@@ -35,13 +36,12 @@ Proyecto de aprendizaje de despliegue/infraestructura de IA: asistente LLM local
 ## Stack actual
 
 ```
-[Cliente browser]  ──HTTP──▶  [FastAPI :8000 (llmops-api)]
-                                    ├──▶  [Ollama :11434 (llmops-ollama)]  ──▶  GPU NVIDIA
-                                    └──▶  [Qdrant :6333  (llmops-qdrant)]
-                                          ↑ docs/ bind-mounted, vigilada por watchdog
+[Cliente browser] ──▶ [FastAPI :8000] ──▶ [LiteLLM :4000] ──┬──▶ Ollama :11434 (local, GPU)
+                            │                                ├──▶ api.openai.com
+                            └──▶ Qdrant :6333 (RAG)          └──▶ api.anthropic.com
 ```
 
-Tres contenedores en una red interna de Docker (`docker-compose.yml`). La API es el único expuesto fuera. `docs/` y `bench/` están bind-mounted desde el host (iteras sin rebuild).
+Cuatro contenedores en la red interna de Docker (`docker-compose.yml`). Solo la API expone puerto al host (Qdrant también, para el dashboard). LiteLLM concentra el control plane: routing entre proveedores, gestión de keys, retries, futuro cost-tracking. La API habla OpenAI puro contra `http://litellm:4000/v1` con el master key del proxy. `docs/` y `bench/` están bind-mounted desde el host (iteras sin rebuild).
 
 ---
 
@@ -49,25 +49,26 @@ Tres contenedores en una red interna de Docker (`docker-compose.yml`). La API es
 
 ```
 api/app/
-  main.py              Entry point · lifespan (Ollama+Qdrant+Watcher) · error handlers · ruta /
+  main.py              Entry point · lifespan (LLMClient+RAG+Watcher) · error handlers · ruta /
   config.py            Settings via pydantic-settings, leído de .env
   models.py            Schemas Pydantic: OpenAI + RAG + Agents
   middleware/
     logging.py         structlog JSON, X-Request-ID, timing por request
   services/
-    ollama_client.py   AsyncClient httpx: chat, chat_stream, embed, list_models,
-                       chat_with_tools, chat_with_tools_stream
+    llm_client.py      Cliente async contra LiteLLM proxy (AsyncOpenAI con
+                       base_url=http://litellm:4000/v1). Métodos: chat,
+                       chat_stream, chat_with_tools(_stream), embed, list_models
   routers/
-    health.py          /healthz, /readyz
+    health.py          /healthz, /readyz (pinguea LiteLLM)
     chat.py            /v1/chat/completions (SSE)
     embeddings.py      /v1/embeddings
-    models.py          /v1/models
+    models.py          /v1/models (listados por LiteLLM, aliases del config)
     rag.py             /v1/rag/documents (GET/POST/DELETE), /v1/rag/query, /v1/rag/reindex
     agents.py          /v1/agents/tools, /v1/agents/run (SSE de eventos del agente)
   rag/
     parsers.py         txt/md/pdf/html → texto plano (pypdf, beautifulsoup)
     chunker.py         Recursive character splitter, sin deps externas
-    embedder.py        Wrapper sobre OllamaClient.embed con batching
+    embedder.py        Wrapper sobre LLMClient.embed con batching
     store.py           QdrantStore async: ensure_collection, upsert_chunks, delete_by_*, search
     indexer.py         Orquesta parse→chunk→embed→upsert · idempotencia por sha256(chunk)
     retriever.py       query → embed → search → formatea como mensaje system
@@ -75,21 +76,26 @@ api/app/
   agents/
     registry.py        @tool decorator con schema autogen desde signature + docstring
     loop.py            AgentLoop async generator emitiendo eventos SSE + DEFAULT_AGENT_SYSTEM
+                       Acumula tool_calls progresivos en streaming OpenAI.
     tools/
       __init__.py      Importa todas las tools (registra en REGISTRY al cargar)
       rag_search.py    Tool: búsqueda en la KB del usuario
+      web.py           Tools: web_search, http_fetch
   static/
     index.html         UI vanilla (HTML/CSS/JS sin build): chat + RAG toggle +
                        Agente toggle + drag&drop + system prompt + dark mode + SSE
+  tests/
+    test_litellm_integration.py  E2E sobre TestClient + FakeLLM (mock de LLMClient)
 bench/
-  benchmark.py         TTFT, tokens/s por modelo, escribe results.{jsonl,md}
+  benchmark.py         TTFT, tokens/s vía LiteLLM proxy (AsyncOpenAI)
 docs/                  Carpeta bind-mounted, vigilada por el watcher (RAG)
 scripts/
   pull_models.sh       Descarga modelos baseline en Ollama
   smoke_test.sh        curl a todos los endpoints
-docker-compose.yml     3 servicios: ollama (GPU), qdrant, api
+docker-compose.yml     4 servicios: ollama (GPU), qdrant, litellm, api
+litellm-config.yaml    Aliases de modelos del proxy (ollama_chat/, openai/, anthropic/)
 .env.example
-Makefile               up/down/logs/rebuild/pull-models/bench/smoke/shell
+Makefile               up/down/logs/litellm-logs/rebuild/pull-models/bench/smoke/shell
 roadmap.md             Plan completo
 ```
 
@@ -97,14 +103,20 @@ roadmap.md             Plan completo
 
 ## Modelos usados
 
-| Uso | Modelo | VRAM | Notas |
-|---|---|---:|---|
-| Chat general | `llama3.1:8b-instruct-q4_K_M` | ~4.9 GB | Buen tool calling pero **sesgo a over-calling** |
-| Chat + agente | `qwen2.5:7b-instruct-q4_K_M` | ~4.7 GB | **Mejor disciplina** para tools, recomendado para modo agente |
-| Rápido | `phi3.5:3.8b` | ~2.4 GB | No soporta tool calling nativo |
-| Embeddings | `nomic-embed-text` | ~280 MB | 768 dim, usado por el RAG |
+Los aliases viven en `litellm-config.yaml` (`model_name`). La API y la UI nunca usan el ID interno del proveedor: hablan el alias y el proxy enruta.
 
-`make pull-models` los descarga todos. Los nombres viven en `BENCH_MODELS` en `.env`.
+| Alias (proxy) | Backend real | VRAM/Coste | Notas |
+|---|---|---:|---|
+| `llama-local` | `ollama_chat/llama3.1:8b-instruct-q4_K_M` | ~4.9 GB | Buen tool calling pero **sesgo a over-calling** |
+| `qwen-local` | `ollama_chat/qwen2.5:7b-instruct-q4_K_M` | ~4.7 GB | **Mejor disciplina** para tools, recomendado para modo agente |
+| `phi-local` | `ollama/phi3.5:3.8b` | ~2.4 GB | No soporta tool calling nativo |
+| `nomic-embed` | `ollama/nomic-embed-text` | ~280 MB | 768 dim, usado por el RAG |
+| `gpt-4o-mini` | `openai/gpt-4o-mini` | $0.15/$0.60 por Mtok | Necesita `OPENAI_API_KEY` |
+| `gpt-4o` | `openai/gpt-4o` | $2.50/$10 por Mtok | |
+| `claude-sonnet-4-6` | `anthropic/claude-sonnet-4-6` | $3/$15 por Mtok | Necesita `ANTHROPIC_API_KEY` |
+| `claude-haiku-4-5` | `anthropic/claude-haiku-4-5-20251001` | $1/$5 por Mtok | |
+
+`make pull-models` descarga los locales. Para añadir un proveedor nuevo basta con agregar una entrada al `model_list` del YAML y reiniciar el contenedor `litellm` — la API no necesita rebuild.
 
 ---
 
@@ -112,6 +124,8 @@ roadmap.md             Plan completo
 
 ```powershell
 cp .env.example .env
+# Rellena OPENAI_API_KEY y/o ANTHROPIC_API_KEY si quieres usar cloud.
+# LITELLM_MASTER_KEY puede dejarse el default en local.
 docker compose up -d --build
 make pull-models           # solo la primera vez (~12 GB de descarga)
 make smoke                 # opcional, sanity check
@@ -155,9 +169,9 @@ make shell                 # bash dentro del contenedor api
 
 4. **bench/ y docs/ son bind-mounts** (en `docker-compose.yml`). La imagen solo copia `app/`. Editar `benchmark.py` no requiere rebuild; editar código de `api/app/` sí.
 
-5. **OllamaClient.chat_with_tools(_stream)** están monkey-patcheados al final del archivo (no son métodos de la clase). Si refactorizas, pueden moverse dentro de la `class` sin cambiar comportamiento.
+5. **LLMClient habla con LiteLLM, no con Ollama directo.** La traducción al dialecto de cada proveedor la hace el proxy (los aliases `ollama_chat/...` activan el modo de tool-calling estructurado de Ollama). Si añades un proveedor nuevo, lo configuras en `litellm-config.yaml` y la API no necesita cambios.
 
-6. **Ollama tool calling streaming:** los `tool_calls` solo aparecen en el chunk final (`done: true`). El `AgentLoop` itera el stream emitiendo `content_delta` por cada trozo de contenido, acumula los `tool_calls`, y al cerrar decide la rama (final vs. ejecutar tools).
+6. **Tool calling streaming OpenAI:** los `tool_calls` llegan como **deltas progresivos** con `index` estable y `function.arguments` concatenándose chunk a chunk. El `AgentLoop` acumula por `index` y cierra por `finish_reason == "tool_calls"`. Esto difiere del comportamiento legacy de Ollama (todo en el chunk final con `done: true`); ahora pasa por LiteLLM y se normaliza al formato OpenAI puro. Tools paralelas (varias en una misma respuesta) ya están soportadas.
 
 7. **RAG idempotencia:** el `point_id` en Qdrant es `uuid5(NAMESPACE_OID, sha256(chunk_text))`. Re-indexar el mismo doc no duplica. Antes de `upsert` se llama a `delete_by_source(source)` para limpiar chunks viejos si el contenido cambió.
 
@@ -195,7 +209,7 @@ OLLAMA_HOST=http://x:1 QDRANT_HOST=http://x:6333 RAG_WATCHER_ENABLED=false \
   PYTHONPATH=. /tmp/v/bin/python -B test_script.py
 ```
 
-Para mockear Ollama dentro del lifespan, sustituir `app.state.ollama` con un fake **dentro** del `with TestClient(app)` block (el lifespan startup sobreescribe lo que pongas antes).
+Para mockear el cliente dentro del lifespan, sustituir `app.state.llm` con un fake **dentro** del `with TestClient(app)` block (el lifespan startup sobreescribe lo que pongas antes). Hay un ejemplo trabajado en `api/tests/test_litellm_integration.py` con un `FakeLLM` que cubre chat no-stream, streaming, agente trivial, 1 tool y tools paralelas.
 
 ---
 

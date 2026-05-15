@@ -1,17 +1,17 @@
-"""Wrapper sobre OllamaClient.embed con batching simple."""
+"""Wrapper sobre LLMClient.embed con batching simple."""
 
 from __future__ import annotations
 
 import logging
 from typing import Iterable
 
-from app.services.ollama_client import OllamaClient
+from app.services.llm_client import LLMClient
 
 log = logging.getLogger(__name__)
 
 
 class Embedder:
-    def __init__(self, client: OllamaClient, model: str, batch_size: int = 32):
+    def __init__(self, client: LLMClient, model: str, batch_size: int = 32):
         self.client = client
         self.model = model
         self.batch_size = batch_size
