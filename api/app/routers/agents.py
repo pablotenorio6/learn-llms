@@ -10,8 +10,8 @@ from fastapi.responses import StreamingResponse
 
 from app.agents.loop import AgentLoop
 from app.agents.registry import REGISTRY, get_tools
-# Importar el módulo registra todas las tools
-from app.agents.tools import rag_search  # noqa: F401
+# Importar el paquete registra todas las tools (rag_search, web_search, http_fetch, ...)
+from app.agents import tools as _tools  # noqa: F401
 from app.models import AgentRunRequest, AgentToolInfo, AgentToolsResponse
 
 log = logging.getLogger(__name__)

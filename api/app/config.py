@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+import os
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     rag_docs_dir: str = "/app/docs"
     rag_watcher_enabled: bool = True
+
+    # Web tools
+    brave_api_key: str = os.getenv("BRAVE_API_KEY", "")
+    brave_endpoint: str = "https://api.search.brave.com/res/v1/web/search"
+    web_search_timeout: float = 10.0
+    web_search_max_results: int = 10
+    http_fetch_timeout: float = 10.0
+    http_fetch_max_bytes: int = 2_000_000
+    http_fetch_max_chars: int = 8000
+    http_fetch_user_agent: str = "llmops-agent/0.1 (+https://github.com/local)"
 
     @property
     def api_keys_list(self) -> list[str]:
