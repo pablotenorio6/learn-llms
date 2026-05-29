@@ -222,7 +222,7 @@ make shell                 # bash dentro del contenedor api
 
 12. **El trace de Langfuse vive durante todo el SSE stream**, no sólo durante el handler. Por eso `chat_stream` y `agents/run` abren el trace con `start_trace()` (no con context manager) y lo cierran en el `finally` del generador async. Si usas un `with tracer.trace(...)` en el handler, el trace se cierra antes de que se consuma el stream y verás trazas vacías sin output.
 
-13. **LiteLLM ↔ Langfuse cuelga generations por `metadata.trace_id`**, no por header. El `LLMClient` mete el dict en `extra_body={"metadata": {"trace_id": ..., "parent_observation_id": ..., "generation_name": ...}}`. El proxy crea la generation bajo ese trace si los callbacks están activos en `litellm-config.yaml`.
+13. **LiteLLM ↔ Langfuse cuelga generations por `metadata.existing_trace_id`** (NO `trace_id`), más `parent_observation_id` y `generation_name`. El `LLMClient` mete el dict en `extra_body={"metadata": {...}}` (lo produce `litellm_metadata()` en `observability/langfuse_client.py`). El proxy ancla la generation bajo ese trace si los callbacks están activos en `litellm-config.yaml`. **Por qué `existing_trace_id` y no `trace_id`:** ver gotcha #18.
 
 14. **El gpu-exporter requiere acceso al runtime de NVIDIA igual que Ollama**. Si compose se queja con `could not select device driver "" with capabilities: [[gpu]]`, te falta el NVIDIA Container Toolkit en el host. En Docker Desktop Windows va incluido si tienes WSL2 + driver NVIDIA actualizado.
 
@@ -231,6 +231,8 @@ make shell                 # bash dentro del contenedor api
 16. **`depends_on` con `condition: service_healthy` te bloquea la API si una dep secundaria casca**. Para Langfuse en particular usamos `service_started` porque el tracer tiene fallback Noop — si Langfuse no levanta, la API debe seguir funcionando sin trazas. Aplica el mismo criterio antes de añadir nuevos servicios al depends_on.
 
 17. **`/metrics` de LiteLLM:** (a) pide auth por defecto — apagarla con `litellm_settings.require_auth_for_metrics_endpoint: false`; (b) redirige `/metrics` → `/metrics/` con host absoluto, lo que Prometheus no resuelve dentro de la red docker. En `prometheus.yml`, `metrics_path: /metrics/` (con barra) evita el redirect.
+
+18. **Race condition de nombres de trace en Langfuse (`trace_id` vs `existing_trace_id`).** Síntoma: en Langfuse aparecen trazas raíz `litellm-acompletion` / `litellm-aembedding` mezcladas con las tuyas (`agent.run`, `chat.completions`), a veces para la *misma* petición. Causa: sobre un mismo `trace_id` escriben **dos** clientes Langfuse — el SDK de la app (que lo crea con su `name`) y el callback del proxy. En `langfuse.py` del proxy, si recibe `trace_id` **sin** `existing_trace_id` ni `trace_name`, hace upsert del trace poniendo `name = f"litellm-{call_type}"`; como ambos flushean async, el último en llegar pisa el `name`. **Fix:** pasar `existing_trace_id` (no `trace_id`) en el metadata → el proxy hace `trace_params={"id": ...}` sin tocar el `name`. Verificado vía la API pública de Langfuse (`GET /api/public/traces`): con `trace_id` ~13 de 16 trazas de agente salían renombradas; con `existing_trace_id` el nombre se mantiene estable. Aparte, **`LLMClient.embed()` debe adjuntar metadata igual que los métodos de chat** (antes no lo hacía) o todo embedding sale como traza huérfana aunque haya trace activo (p.ej. el embed de `rag_search` dentro de un `agent.run`).
 
 ---
 
