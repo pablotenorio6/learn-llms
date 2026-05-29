@@ -14,12 +14,12 @@ Proyecto de aprendizaje de despliegue/infraestructura de IA: asistente LLM local
 
 - **Fase 0** — Setup baseline (Ollama, bench, modelos descargados)
 - **Fase 1** — Wrapper API OpenAI-compatible (FastAPI + SSE streaming + cancelación + middleware de logging)
-- **Fase 3** — RAG sobre Qdrant (Fase 2 se saltó deliberadamente para llegar antes a RAG)
+- **Fase 2** — Observabilidad: Langfuse v2 self-hosted (trazas LLM con jerarquía trace→span→generation, integrado con LiteLLM vía callback + metadata.trace_id), Prometheus (/metrics en API + LiteLLM + side-car GPU con nvidia-smi), Grafana con dashboard provisionado
+- **Fase 3** — RAG sobre Qdrant
 - **Fase 4** — Tool calling + harness de agente (registry @tool, AgentLoop con SSE events, /v1/agents/run, UI con cards inline)
 - **Multi-proveedor vía LiteLLM proxy** — la API ya no habla con Ollama directo. Habla con un proxy LiteLLM (contenedor sidecar) en formato OpenAI puro. Soporta Ollama local, OpenAI y Anthropic con sólo añadir alias en `litellm-config.yaml`
 
 **Pendientes:**
-- **Fase 2** — Observabilidad (Langfuse self-hosted para trazas LLM, Prometheus + Grafana para métricas de sistema)
 - **Fase 5** — Evals + CI (Promptfoo o DeepEval, 50–100 ejemplos de regresión, integración en GitHub Actions, métricas RAG)
 - **Fase 6** — Producción-grade (Redis caché, rate limiting, auth con API keys, router de modelos, load testing)
 - **Fase 7** (opcional) — Frontend con Open WebUI o Next.js
@@ -38,10 +38,15 @@ Proyecto de aprendizaje de despliegue/infraestructura de IA: asistente LLM local
 ```
 [Cliente browser] ──▶ [FastAPI :8000] ──▶ [LiteLLM :4000] ──┬──▶ Ollama :11434 (local, GPU)
                             │                                ├──▶ api.openai.com
-                            └──▶ Qdrant :6333 (RAG)          └──▶ api.anthropic.com
+                            │                                └──▶ api.anthropic.com
+                            ├──▶ Qdrant :6333 (RAG)
+                            └──▶ Langfuse :3030 (trazas)
+
+Observabilidad: Prometheus :9090 raspa /metrics de api + litellm + gpu-exporter,
+Grafana :3001 muestra el dashboard provisionado.
 ```
 
-Cuatro contenedores en la red interna de Docker (`docker-compose.yml`). Solo la API expone puerto al host (Qdrant también, para el dashboard). LiteLLM concentra el control plane: routing entre proveedores, gestión de keys, retries, futuro cost-tracking. La API habla OpenAI puro contra `http://litellm:4000/v1` con el master key del proxy. `docs/` y `bench/` están bind-mounted desde el host (iteras sin rebuild).
+Stack completo en `docker-compose.yml` (9 servicios). Puertos al host: API `8000`, Qdrant `6333`, LiteLLM `4000`, Langfuse `3030`, Prometheus `9090`, Grafana `3001`, gpu-exporter `9835`. LiteLLM concentra el control plane: routing, retries, cost tracking, callbacks Langfuse+Prometheus. La API habla OpenAI puro contra `http://litellm:4000/v1` con el master key del proxy. `docs/` y `bench/` están bind-mounted desde el host (iteras sin rebuild). `make urls` imprime todas las URLs útiles.
 
 ---
 
@@ -49,15 +54,30 @@ Cuatro contenedores en la red interna de Docker (`docker-compose.yml`). Solo la 
 
 ```
 api/app/
-  main.py              Entry point · lifespan (LLMClient+RAG+Watcher) · error handlers · ruta /
+  main.py              Entry point · lifespan (LLMClient+RAG+Watcher+Langfuse) ·
+                       error handlers · expone /metrics vía Instrumentator
   config.py            Settings via pydantic-settings, leído de .env
   models.py            Schemas Pydantic: OpenAI + RAG + Agents
   middleware/
     logging.py         structlog JSON, X-Request-ID, timing por request
+  observability/
+    langfuse_client.py Tracer singleton (LangfuseTracer / NoopTracer) con
+                       contextvars current_trace_id/current_observation_id.
+                       Helpers: trace(), span() context managers + start_*().
+                       litellm_metadata() produce el dict que viaja en
+                       extra_body.metadata a LiteLLM para que la generation
+                       cuelgue del trace correcto.
+    metrics.py         Histogramas/counters/gauges Prometheus LLM-específicos:
+                       llm_request_duration_seconds, llm_ttft_seconds,
+                       llm_tokens_total, llm_active_requests,
+                       agent_iterations_total, agent_tool_calls_total,
+                       agent_tool_duration_seconds, rag_*.
   services/
     llm_client.py      Cliente async contra LiteLLM proxy (AsyncOpenAI con
                        base_url=http://litellm:4000/v1). Métodos: chat,
-                       chat_stream, chat_with_tools(_stream), embed, list_models
+                       chat_stream, chat_with_tools(_stream), embed, list_models.
+                       Cada método inyecta metadata Langfuse en extra_body y
+                       emite métricas (TTFT, duración, tokens, active).
   routers/
     health.py          /healthz, /readyz (pinguea LiteLLM)
     chat.py            /v1/chat/completions (SSE)
@@ -92,10 +112,21 @@ docs/                  Carpeta bind-mounted, vigilada por el watcher (RAG)
 scripts/
   pull_models.sh       Descarga modelos baseline en Ollama
   smoke_test.sh        curl a todos los endpoints
-docker-compose.yml     4 servicios: ollama (GPU), qdrant, litellm, api
-litellm-config.yaml    Aliases de modelos del proxy (ollama_chat/, openai/, anthropic/)
+gpu-exporter/
+  Dockerfile           Imagen CUDA base + python con nvidia-smi disponible
+  exporter.py          Loop que vuelca métricas de nvidia-smi como gauges Prometheus
+prometheus/
+  prometheus.yml       Scrape config: api, litellm, gpu-exporter, prometheus self
+grafana/
+  provisioning/        Datasource (Prometheus) y provider de dashboards
+  dashboards/
+    llmops-overview.json  Dashboard con paneles HTTP, LLM, agente, RAG, GPU, LiteLLM
+docker-compose.yml     9 servicios: ollama, qdrant, litellm, langfuse-db, langfuse,
+                       prometheus, grafana, gpu-exporter, api
+litellm-config.yaml    Aliases de modelos del proxy (ollama_chat/, openai/,
+                       anthropic/) + callbacks langfuse y prometheus
 .env.example
-Makefile               up/down/logs/litellm-logs/rebuild/pull-models/bench/smoke/shell
+Makefile               up/down/logs/*-logs/rebuild/pull-models/bench/smoke/urls
 roadmap.md             Plan completo
 ```
 
@@ -187,6 +218,20 @@ make shell                 # bash dentro del contenedor api
 
 10. **El sandbox del usuario tiene proxies SOCKS** activos por defecto que rompen httpx en tests. Si tropiezas con `ImportError: socksio not installed`, `unset HTTP_PROXY HTTPS_PROXY ALL_PROXY ftp_proxy grpc_proxy all_proxy` antes de los tests.
 
+11. **Langfuse v2 INIT vars** semillan org/proyecto/keys/usuario en el primer arranque. Eso hace reproducible el setup: tras `make clean` y vuelta a `make up`, las mismas `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` del `.env` siguen siendo válidas — no hay que entrar a la UI a copiar nada. Si necesitas regenerar keys, hazlo en Settings y vuelca al `.env`.
+
+12. **El trace de Langfuse vive durante todo el SSE stream**, no sólo durante el handler. Por eso `chat_stream` y `agents/run` abren el trace con `start_trace()` (no con context manager) y lo cierran en el `finally` del generador async. Si usas un `with tracer.trace(...)` en el handler, el trace se cierra antes de que se consuma el stream y verás trazas vacías sin output.
+
+13. **LiteLLM ↔ Langfuse cuelga generations por `metadata.trace_id`**, no por header. El `LLMClient` mete el dict en `extra_body={"metadata": {"trace_id": ..., "parent_observation_id": ..., "generation_name": ...}}`. El proxy crea la generation bajo ese trace si los callbacks están activos en `litellm-config.yaml`.
+
+14. **El gpu-exporter requiere acceso al runtime de NVIDIA igual que Ollama**. Si compose se queja con `could not select device driver "" with capabilities: [[gpu]]`, te falta el NVIDIA Container Toolkit en el host. En Docker Desktop Windows va incluido si tienes WSL2 + driver NVIDIA actualizado.
+
+15. **Langfuse v2 valida el email INIT con Zod** y exige TLD: `admin@local` casca el contenedor (`Invalid environment variables: { LANGFUSE_INIT_USER_EMAIL: [ 'Invalid email' ] }`). Usar `admin@example.com` o cualquier dominio real.
+
+16. **`depends_on` con `condition: service_healthy` te bloquea la API si una dep secundaria casca**. Para Langfuse en particular usamos `service_started` porque el tracer tiene fallback Noop — si Langfuse no levanta, la API debe seguir funcionando sin trazas. Aplica el mismo criterio antes de añadir nuevos servicios al depends_on.
+
+17. **`/metrics` de LiteLLM:** (a) pide auth por defecto — apagarla con `litellm_settings.require_auth_for_metrics_endpoint: false`; (b) redirige `/metrics` → `/metrics/` con host absoluto, lo que Prometheus no resuelve dentro de la red docker. En `prometheus.yml`, `metrics_path: /metrics/` (con barra) evita el redirect.
+
 ---
 
 ## Testing
@@ -229,5 +274,8 @@ Para preguntas conceptuales (cómo funciona X), prosa larga y de profundidad. Pa
 2. `api/app/main.py` — entry point y wiring de todo
 3. `api/app/agents/loop.py` — el bucle del agente y `DEFAULT_AGENT_SYSTEM`
 4. `api/app/rag/indexer.py` + `retriever.py` — flujo RAG
-5. `api/app/static/index.html` — UI completa, sirve también de "manual de uso" del API
-6. `docker-compose.yml` — orquestación y healthchecks
+5. `api/app/observability/langfuse_client.py` — modelo de tracing (trace→span→generation)
+6. `api/app/observability/metrics.py` — catálogo completo de métricas Prometheus
+7. `grafana/dashboards/llmops-overview.json` — qué se ve en el dashboard
+8. `api/app/static/index.html` — UI completa, sirve también de "manual de uso" del API
+9. `docker-compose.yml` — orquestación y healthchecks

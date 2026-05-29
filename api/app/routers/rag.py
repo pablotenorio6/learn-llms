@@ -14,6 +14,7 @@ from app.models import (
     RagQueryRequest,
     RagQueryResponse,
 )
+from app.observability import get_tracer
 from app.rag.parsers import SUPPORTED_EXTENSIONS, UnsupportedFormatError
 
 log = logging.getLogger(__name__)
@@ -72,12 +73,18 @@ async def delete_document(request: Request, doc_id: str):
 @router.post("/query", response_model=RagQueryResponse)
 async def query(request: Request, body: RagQueryRequest):
     rag = _ensure_rag(request)
-    res = await rag["retriever"].query(body.query, top_k=body.top_k)
-    return RagQueryResponse(
-        query=res.query,
-        hits=[RagHit(**h.__dict__) for h in res.hits],
-        system_message=res.as_system_message(),
-    )
+    tracer = get_tracer()
+    with tracer.trace(
+        "rag.query",
+        input=body.query if tracer.log_payloads else None,
+        metadata={"top_k": body.top_k},
+    ):
+        res = await rag["retriever"].query(body.query, top_k=body.top_k)
+        return RagQueryResponse(
+            query=res.query,
+            hits=[RagHit(**h.__dict__) for h in res.hits],
+            system_message=res.as_system_message(),
+        )
 
 
 @router.post("/reindex")

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import get_settings
 from app.middleware.logging import RequestContextMiddleware, configure_logging
+from app.observability import init_tracer, shutdown_tracer
 from app.routers import agents, chat, embeddings, health, rag
 from app.routers import models as models_router
 from app.services.llm_client import LLMClient
@@ -24,6 +25,16 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.api_log_level)
+
+    # Langfuse (trazas LLM). Si está apagado, init_tracer devuelve un NoopTracer
+    # y el resto de la app funciona idéntico sin emitir trazas.
+    init_tracer(
+        enabled=settings.langfuse_enabled,
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host,
+        log_payloads=settings.langfuse_log_payloads,
+    )
 
     client = LLMClient(
         base_url=settings.litellm_base_url,
@@ -81,6 +92,8 @@ async def lifespan(app: FastAPI):
         if app.state.rag and app.state.rag.get("store") is not None:
             await app.state.rag["store"].aclose()
         await client.aclose()
+        # Flushea el buffer de Langfuse antes de morir para no perder trazas.
+        shutdown_tracer()
         log.info("api.shutdown")
 
 
@@ -92,6 +105,31 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestContextMiddleware)
+
+
+# Prometheus: instrumenta automáticamente latencia/RPS/status por endpoint y
+# expone /metrics. Las métricas LLM-específicas (TTFT, tokens, tools, ...) las
+# emitimos manualmente desde routers / LLMClient / AgentLoop usando el mismo
+# REGISTRY global, así todo sale por el mismo endpoint.
+def _setup_metrics(app: FastAPI) -> None:
+    settings = get_settings()
+    if not settings.metrics_enabled:
+        return
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+
+        Instrumentator(
+            should_group_status_codes=False,
+            should_instrument_requests_inprogress=True,
+            inprogress_labels=True,
+            excluded_handlers=["/metrics", "/healthz", "/readyz"],
+        ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+        log.info("metrics.ready")
+    except Exception as e:
+        log.warning("metrics.init_failed", extra={"err": str(e)})
+
+
+_setup_metrics(app)
 
 
 def verify_api_key(request: Request) -> None:

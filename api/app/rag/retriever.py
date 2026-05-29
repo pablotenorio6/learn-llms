@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
+from app.observability import get_tracer, rag_chunks_returned, rag_retrieval_duration
 from app.rag.embedder import Embedder
 from app.rag.store import QdrantStore, SearchHit
 
@@ -41,7 +43,22 @@ class Retriever:
         self.embedder = embedder
 
     async def query(self, text: str, top_k: int = 5) -> RetrievalResult:
-        vec = await self.embedder.embed_one(text)
-        hits = await self.store.search(vector=vec, top_k=top_k)
-        log.info("rag.retrieved", extra={"query_len": len(text), "hits": len(hits)})
-        return RetrievalResult(hits=hits, query=text)
+        tracer = get_tracer()
+        t0 = time.perf_counter()
+        with tracer.span(
+            "rag.retrieval",
+            input=text if tracer.log_payloads else None,
+            metadata={"top_k": top_k, "query_len": len(text)},
+        ) as span:
+            vec = await self.embedder.embed_one(text)
+            hits = await self.store.search(vector=vec, top_k=top_k)
+            duration = time.perf_counter() - t0
+            rag_retrieval_duration.observe(duration)
+            rag_chunks_returned.observe(len(hits))
+            log.info("rag.retrieved", extra={"query_len": len(text), "hits": len(hits)})
+            if tracer.log_payloads:
+                span.update(
+                    output=[{"source": h.source, "score": h.score, "text_preview": h.text[:200]} for h in hits],
+                    metadata={"chunks_returned": len(hits), "duration_s": round(duration, 4)},
+                )
+            return RetrievalResult(hits=hits, query=text)

@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     rag_docs_dir: str = "/app/docs"
     rag_watcher_enabled: bool = True
 
+    # Observabilidad
+    # Langfuse self-hosted (v2). Si langfuse_enabled=false o falta secret_key, no se traza.
+    langfuse_enabled: bool = True
+    langfuse_host: str = "http://langfuse:3000"
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    # Si true, mete prompt y completion en spans. En producción puede que quieras
+    # apagarlo por privacidad — aquí lo dejamos por defecto on porque es entorno local.
+    langfuse_log_payloads: bool = True
+    # Prometheus
+    metrics_enabled: bool = True
+
     # Web tools
     brave_api_key: str = os.getenv("BRAVE_API_KEY", "")
     brave_endpoint: str = "https://api.search.brave.com/res/v1/web/search"

@@ -7,8 +7,10 @@ pydantic-settings==2.7.0
 structlog==24.4.0
 python-dotenv==1.0.1
 prometheus-client==0.21.1
+prometheus-fastapi-instrumentator==7.0.2
 python-multipart==0.0.20
 qdrant-client==1.12.2
 watchdog==6.0.0
 pypdf==5.1.0
 beautifulsoup4==4.12.3
+langfuse==2.60.5

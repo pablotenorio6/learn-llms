@@ -1,0 +1,205 @@
+{
+  "uid": "llmops-overview",
+  "title": "llm_ops — overview",
+  "tags": ["llmops"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-30m", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "model",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "query": "label_values(llm_request_duration_seconds_bucket, model)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {"text": "All", "value": "$__all"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active LLM requests",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(llm_active_requests)", "refId": "A"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Requests/s (5m)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(http_requests_total[5m]))", "refId": "A"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Tokens/s out (5m)",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(llm_tokens_total{direction=\"output\"}[5m]))", "refId": "A"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Tool calls / 5m",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(increase(agent_tool_calls_total[5m]))", "refId": "A"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "HTTP latency p50/p95/p99 (api, todos los endpoints)",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Requests/s por endpoint (status code)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (handler, status) (rate(http_requests_total[5m]))", "legendFormat": "{{handler}} {{status}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}}
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "LLM duración por modelo — p95 (endpoint=chat/agent)",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, model, endpoint) (rate(llm_request_duration_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "{{model}} {{endpoint}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "TTFT por modelo — p50/p95 (sólo streaming)",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le, model) (rate(llm_ttft_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p50 {{model}}", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le, model) (rate(llm_ttft_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p95 {{model}}", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Tokens/s por modelo y dirección",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (model, direction) (rate(llm_tokens_total{model=~\"$model\"}[5m]))", "legendFormat": "{{model}} {{direction}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "LLM in-flight por endpoint",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (endpoint) (llm_active_requests)", "legendFormat": "{{endpoint}}", "refId": "A"}
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Agente — iteraciones/s y tool calls/s por outcome",
+      "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(agent_iterations_total[5m]))", "legendFormat": "iterations/s", "refId": "A"},
+        {"expr": "sum by (outcome) (rate(agent_tool_calls_total[5m]))", "legendFormat": "tools/s ({{outcome}})", "refId": "B"}
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Tool latency p95 por tool",
+      "gridPos": {"x": 12, "y": 28, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, tool) (rate(agent_tool_duration_seconds_bucket[5m])))", "legendFormat": "{{tool}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "RAG retrieval — p95 latencia y chunks devueltos (avg)",
+      "gridPos": {"x": 0, "y": 36, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(rag_retrieval_duration_seconds_bucket[5m])))", "legendFormat": "p95 latencia", "refId": "A"},
+        {"expr": "rate(rag_chunks_returned_sum[5m]) / clamp_min(rate(rag_chunks_returned_count[5m]), 1)", "legendFormat": "avg chunks", "refId": "B"}
+      ]
+    },
+    {
+      "id": 50,
+      "type": "timeseries",
+      "title": "GPU — VRAM usada (MB) y utilización (%)",
+      "gridPos": {"x": 12, "y": 36, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "gpu_memory_used_mb", "legendFormat": "VRAM usada {{gpu}}", "refId": "A"},
+        {"expr": "gpu_utilization_percent", "legendFormat": "util % {{gpu}}", "refId": "B"}
+      ]
+    },
+    {
+      "id": 51,
+      "type": "timeseries",
+      "title": "GPU — temperatura (°C)",
+      "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "gpu_temperature_celsius", "legendFormat": "{{gpu}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "celsius"}}
+    },
+    {
+      "id": 60,
+      "type": "timeseries",
+      "title": "LiteLLM — total requests y errores por proveedor",
+      "gridPos": {"x": 12, "y": 44, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (model_group, hashed_api_key) (rate(litellm_requests_metric_total[5m]))", "legendFormat": "ok {{model_group}}", "refId": "A"},
+        {"expr": "sum by (model_group) (rate(litellm_failed_requests_metric_total[5m]))", "legendFormat": "fail {{model_group}}", "refId": "B"}
+      ]
+    }
+  ]
+}

@@ -55,9 +55,19 @@ litellm_settings:
   # Reintentos básicos por timeouts transitorios.
   num_retries: 2
   request_timeout: 600
-  # Telemetría apagada (la activaremos en Fase 2 con Langfuse).
   set_verbose: false
   telemetry: false
+  # ---- Observabilidad (Fase 2) ----
+  # langfuse: traza cada llamada al modelo en el servidor self-hosted. La app
+  #   reenvía metadata.trace_id en cada request, así la generation cuelga del
+  #   trace correcto (request del usuario, iteración del agente, etc.).
+  # prometheus: expone /metrics en el propio puerto del proxy (4000) con
+  #   contadores e histogramas por modelo/proveedor.
+  success_callback: ["langfuse", "prometheus"]
+  failure_callback: ["langfuse", "prometheus"]
+  # /metrics del proxy es scrapeado por Prometheus dentro de la red interna;
+  # apagamos auth para no tener que enviar Bearer desde prometheus.yml.
+  require_auth_for_metrics_endpoint: false
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

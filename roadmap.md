@@ -75,26 +75,30 @@ Test de la victoria: cambiar el modelo en la UI entre `llama-local` y `gpt-4o-mi
 
 ---
 
-## Fase 2 — Observabilidad (1 semana)
+## Fase 2 — Observabilidad ✅ (implementada)
 
-**Objetivo**: si no lo mides, no lo entiendes. Esta es la fase que más distingue un proyecto de juguete de uno serio.
+**Lo que se construyó:**
 
-Stack recomendado:
-- **Langfuse** self-hosted (docker-compose oficial) para trazas LLM-específicas: prompts, completions, latencia, coste estimado, evals.
-- **Prometheus + Grafana** para métricas de sistema: latencia p50/p95/p99, RPS, errores, VRAM, queue depth.
-- **Logs estructurados** en JSON con `structlog`, correlation ID por request.
+- **Langfuse v2 self-hosted** (`langfuse-db` Postgres + `langfuse` web @ :3030). Trazas LLM con jerarquía `trace → span → generation`. Bootstrap automático de org/proyecto/keys/usuario por env (`LANGFUSE_INIT_*`), así un `make clean && make up` deja las mismas keys del `.env` válidas sin tocar la UI.
+- **Cliente de tracing propio** en `api/app/observability/langfuse_client.py`. Singleton `LangfuseTracer` con context managers `trace()` / `span()`, contextvars `current_trace_id` y `current_observation_id`. Si Langfuse está apagado o le faltan keys, devuelve un `NoopTracer` con la misma interfaz y el código del resto de la app no se entera.
+- **LiteLLM ↔ Langfuse**: callbacks `langfuse` activos en `litellm-config.yaml`. La API forwardea `metadata={"trace_id", "parent_observation_id", "generation_name"}` en `extra_body` por cada llamada, así cada generation cuelga del trace y span correctos. Un request a `/v1/agents/run` queda como un único trace con sub-spans por iteración y por tool, y dentro de cada span su generation correspondiente.
+- **Prometheus + Grafana**:
+  - `/metrics` en la API con `prometheus-fastapi-instrumentator` (HTTP estándar) + métricas LLM-específicas: `llm_request_duration_seconds`, `llm_ttft_seconds`, `llm_tokens_total`, `llm_active_requests`, `agent_iterations_total`, `agent_tool_calls_total`, `agent_tool_duration_seconds`, `rag_retrieval_duration_seconds`, `rag_chunks_returned`.
+  - `/metrics` también en LiteLLM (callback `prometheus`) → métricas por modelo/proveedor.
+  - Side-car `gpu-exporter` (CUDA base + python) que vuelca `nvidia-smi` cada 5s: VRAM usada/libre/total, utilización %, temperatura, potencia, fan.
+  - Prometheus raspa los tres targets, retención 30 días.
+  - Grafana auto-provisionado (datasource + dashboard JSON) con paneles para latencia HTTP p50/p95/p99, RPS por endpoint, duración LLM por modelo, TTFT, tokens/s, in-flight, iteraciones del agente, tool calls por outcome, latencia por tool, RAG, GPU, LiteLLM por proveedor.
+- **Logs estructurados** JSON con `structlog` + `X-Request-ID` (de Fase 1, ya existía).
 
-Instrumentación a añadir en tu API:
-- Middleware que abre un trace de Langfuse por request.
-- Métricas Prometheus: `llm_request_duration_seconds` (histogram), `llm_tokens_generated_total` (counter), `llm_active_requests` (gauge).
-- Timing fino: tiempo a primer token (TTFT) vs tiempo total, separado.
+Criterio de éxito alcanzado: un request lento es navegable en Langfuse (trace por request → span por iteración → generation con el prompt completo y la latencia exacta), y los dashboards de Grafana responden de un vistazo a "cuánto tarda mi p95 ahora vs hace una hora" y "cuánta VRAM estoy quemando".
 
-Dashboards Grafana mínimos:
-- Throughput y latencia por endpoint.
-- Tokens/s reales (no teóricos) en producción.
-- Saturación de GPU.
+**URLs:**
+- Langfuse UI: http://localhost:3030
+- Grafana: http://localhost:3001
+- Prometheus: http://localhost:9090
+- `/metrics`: http://localhost:8000/metrics (API), http://localhost:4000/metrics (LiteLLM), http://localhost:9835/metrics (GPU)
 
-Criterio de éxito: puedes responder "¿por qué la última petición tardó 4 segundos?" mirando una traza.
+`make urls` los imprime.
 
 ---
 

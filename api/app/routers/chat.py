@@ -21,6 +21,7 @@ from app.models import (
     ChatMessage,
     Usage,
 )
+from app.observability import current_trace_id, get_tracer
 from app.services.llm_client import LLMClient, LLMError
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ async def create_chat_completion(body: ChatCompletionRequest, request: Request):
         raise HTTPException(status_code=400, detail="`messages` cannot be empty")
 
     client: LLMClient = request.app.state.llm
+    tracer = get_tracer()
 
     if body.stream:
         return StreamingResponse(
@@ -52,37 +54,45 @@ async def create_chat_completion(body: ChatCompletionRequest, request: Request):
 
     # Non-streaming. LiteLLM ya devuelve un objeto OpenAI estándar; lo
     # re-empaquetamos en nuestros schemas (que añaden id/object/etc. propios).
-    try:
-        result = await client.chat(body)
-    except LLMError as e:
-        raise HTTPException(status_code=502, detail=f"upstream error: {e}")
+    with tracer.trace(
+        "chat.completions",
+        input=[m.model_dump(exclude_none=True) for m in body.messages] if tracer.log_payloads else None,
+        metadata={"model": body.model, "stream": False},
+    ) as trace_handle:
+        try:
+            result = await client.chat(body, generation_name="chat")
+        except LLMError as e:
+            trace_handle.update(level="ERROR", status_message=str(e))
+            raise HTTPException(status_code=502, detail=f"upstream error: {e}")
 
-    choices_raw = result.get("choices") or []
-    if not choices_raw:
-        raise HTTPException(status_code=502, detail="upstream returned no choices")
-    first = choices_raw[0]
-    msg = first.get("message") or {}
-    content = msg.get("content") or ""
-    finish = first.get("finish_reason") or "stop"
+        choices_raw = result.get("choices") or []
+        if not choices_raw:
+            raise HTTPException(status_code=502, detail="upstream returned no choices")
+        first = choices_raw[0]
+        msg = first.get("message") or {}
+        content = msg.get("content") or ""
+        finish = first.get("finish_reason") or "stop"
 
-    usage_raw = result.get("usage") or {}
-    return ChatCompletionResponse(
-        id=_new_id(),
-        created=int(time.time()),
-        model=result.get("model") or body.model,
-        choices=[
-            ChatChoice(
-                index=0,
-                message=ChatMessage(role="assistant", content=content),
-                finish_reason=finish,
-            )
-        ],
-        usage=Usage(
-            prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
-            completion_tokens=int(usage_raw.get("completion_tokens") or 0),
-            total_tokens=int(usage_raw.get("total_tokens") or 0),
-        ),
-    )
+        usage_raw = result.get("usage") or {}
+        if tracer.log_payloads:
+            trace_handle.update(output=content)
+        return ChatCompletionResponse(
+            id=_new_id(),
+            created=int(time.time()),
+            model=result.get("model") or body.model,
+            choices=[
+                ChatChoice(
+                    index=0,
+                    message=ChatMessage(role="assistant", content=content),
+                    finish_reason=finish,
+                )
+            ],
+            usage=Usage(
+                prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
+                completion_tokens=int(usage_raw.get("completion_tokens") or 0),
+                total_tokens=int(usage_raw.get("total_tokens") or 0),
+            ),
+        )
 
 
 async def _stream_chunks(
@@ -98,68 +108,91 @@ async def _stream_chunks(
     """
     completion_id = _new_id()
     created = int(time.time())
+    tracer = get_tracer()
 
     def _sse(chunk: ChatCompletionChunk) -> bytes:
         return f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
 
-    # Primer chunk con role (como hace OpenAI)
-    yield _sse(
-        ChatCompletionChunk(
-            id=completion_id,
-            created=created,
-            model=body.model,
-            choices=[ChatChunkChoice(index=0, delta=ChatChoiceDelta(role="assistant"))],
-        )
+    # Abrimos trace manualmente (no con context manager) porque el handler
+    # devuelve antes de que el generador se consuma; queremos que el trace
+    # viva todo el streaming.
+    trace_handle = tracer.start_trace(
+        "chat.completions",
+        input=[m.model_dump(exclude_none=True) for m in body.messages] if tracer.log_payloads else None,
+        metadata={"model": body.model, "stream": True},
     )
+    token = current_trace_id.set(trace_handle.id)
 
-    finish_reason: str | None = None
-
+    accumulated_output = ""
+    error_message: str | None = None
     try:
-        async for raw in client.chat_stream(body):
-            if await request.is_disconnected():
-                log.info("chat.client_disconnected", extra={"id": completion_id})
-                return
-
-            choices = raw.get("choices") or []
-            if not choices:
-                continue
-            choice = choices[0]
-            delta = choice.get("delta") or {}
-            piece = delta.get("content") or ""
-            if piece:
-                yield _sse(
-                    ChatCompletionChunk(
-                        id=completion_id,
-                        created=created,
-                        model=body.model,
-                        choices=[
-                            ChatChunkChoice(index=0, delta=ChatChoiceDelta(content=piece))
-                        ],
-                    )
-                )
-
-            if choice.get("finish_reason"):
-                finish_reason = choice["finish_reason"]
-                break
-    except LLMError as e:
-        err = {"error": {"message": str(e), "type": "api_error", "code": 502}}
-        yield f"data: {json.dumps(err)}\n\n".encode("utf-8")
-        yield b"data: [DONE]\n\n"
-        return
-
-    # Chunk final con finish_reason
-    yield _sse(
-        ChatCompletionChunk(
-            id=completion_id,
-            created=created,
-            model=body.model,
-            choices=[
-                ChatChunkChoice(
-                    index=0,
-                    delta=ChatChoiceDelta(),
-                    finish_reason=finish_reason or "stop",
-                )
-            ],
+        # Primer chunk con role (como hace OpenAI)
+        yield _sse(
+            ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=body.model,
+                choices=[ChatChunkChoice(index=0, delta=ChatChoiceDelta(role="assistant"))],
+            )
         )
-    )
-    yield b"data: [DONE]\n\n"
+
+        finish_reason: str | None = None
+
+        try:
+            async for raw in client.chat_stream(body, generation_name="chat.stream"):
+                if await request.is_disconnected():
+                    log.info("chat.client_disconnected", extra={"id": completion_id})
+                    return
+
+                choices = raw.get("choices") or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                delta = choice.get("delta") or {}
+                piece = delta.get("content") or ""
+                if piece:
+                    accumulated_output += piece
+                    yield _sse(
+                        ChatCompletionChunk(
+                            id=completion_id,
+                            created=created,
+                            model=body.model,
+                            choices=[
+                                ChatChunkChoice(index=0, delta=ChatChoiceDelta(content=piece))
+                            ],
+                        )
+                    )
+
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+                    break
+        except LLMError as e:
+            error_message = str(e)
+            err = {"error": {"message": str(e), "type": "api_error", "code": 502}}
+            yield f"data: {json.dumps(err)}\n\n".encode("utf-8")
+            yield b"data: [DONE]\n\n"
+            return
+
+        # Chunk final con finish_reason
+        yield _sse(
+            ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=body.model,
+                choices=[
+                    ChatChunkChoice(
+                        index=0,
+                        delta=ChatChoiceDelta(),
+                        finish_reason=finish_reason or "stop",
+                    )
+                ],
+            )
+        )
+        yield b"data: [DONE]\n\n"
+    finally:
+        if error_message:
+            trace_handle.update(level="ERROR", status_message=error_message)
+        elif tracer.log_payloads and accumulated_output:
+            trace_handle.update(output=accumulated_output)
+        trace_handle.end()
+        current_trace_id.reset(token)

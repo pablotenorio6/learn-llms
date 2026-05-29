@@ -47,10 +47,10 @@ services:
     image: ghcr.io/berriai/litellm:main-stable
     container_name: llmops-litellm
     restart: unless-stopped
-    # Sin puerto al host: solo accesible desde la red interna de compose.
-    # Si quieres pegarle con curl desde el host, descomenta y ajusta.
-    # ports:
-    #   - "4000:4000"
+    # Exponemos 4000 al host para que Prometheus pueda raspar /metrics y para
+    # debug desde curl. La API sigue hablándole por la red interna.
+    ports:
+      - "4000:4000"
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
@@ -58,6 +58,10 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-llmops-changeme}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Langfuse (lo activamos vía callbacks en litellm-config.yaml).
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
     depends_on:
       ollama:
         condition: service_healthy
@@ -67,6 +71,120 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+
+  # ----- Observabilidad (Fase 2) -----
+
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: llmops-langfuse-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${LANGFUSE_DB_USER:-langfuse}
+      - POSTGRES_PASSWORD=${LANGFUSE_DB_PASSWORD:-langfuse-changeme}
+      - POSTGRES_DB=${LANGFUSE_DB_NAME:-langfuse}
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: llmops-langfuse
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    environment:
+      - DATABASE_URL=postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfuse-changeme}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
+      - NEXTAUTH_URL=http://localhost:3030
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-changeme-nextauth-secret-replace-me-32-chars-min}
+      - SALT=${LANGFUSE_SALT:-changeme-salt-replace-me-32-chars-minimum}
+      - TELEMETRY_ENABLED=false
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+      # Bootstrap automático del primer usuario, org, proyecto y keys.
+      # Esto hace reproducible el setup: las mismas LANGFUSE_PUBLIC_KEY /
+      # SECRET_KEY del .env funcionan tras un `docker compose down -v`.
+      - LANGFUSE_INIT_ORG_ID=llmops
+      - LANGFUSE_INIT_ORG_NAME=llmops
+      - LANGFUSE_INIT_PROJECT_ID=llmops
+      - LANGFUSE_INIT_PROJECT_NAME=llmops
+      - LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-pk-lf-llmops-public}
+      - LANGFUSE_INIT_PROJECT_SECRET_KEY=${LANGFUSE_SECRET_KEY:-sk-lf-llmops-secret-changeme}
+      # Zod del init de Langfuse exige email con TLD; admin@local lo rechaza.
+      - LANGFUSE_INIT_USER_EMAIL=${LANGFUSE_INIT_USER_EMAIL:-admin@example.com}
+      - LANGFUSE_INIT_USER_NAME=${LANGFUSE_INIT_USER_NAME:-admin}
+      - LANGFUSE_INIT_USER_PASSWORD=${LANGFUSE_INIT_USER_PASSWORD:-changeme-admin-pass}
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/public/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: llmops-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: llmops-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+  gpu-exporter:
+    build:
+      context: ./gpu-exporter
+      dockerfile: Dockerfile
+    container_name: llmops-gpu-exporter
+    restart: unless-stopped
+    ports:
+      - "9835:9835"
+    environment:
+      - GPU_SCRAPE_INTERVAL=5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   api:
     build:
@@ -82,6 +200,7 @@ services:
       - LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-llmops-changeme}
       - QDRANT_HOST=${QDRANT_HOST:-http://qdrant:6333}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
     volumes:
       # bench/ se monta para iterar sin rebuild
       - ./bench:/app/bench
@@ -92,6 +211,11 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      # Langfuse no es crítico: si no arranca o no está healthy, el tracer
+      # cae en NoopTracer y la API sigue funcionando. Por eso esperamos sólo
+      # a que el contenedor exista, no a que pase healthcheck.
+      langfuse:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
       interval: 15s
@@ -103,4 +227,10 @@ volumes:
   ollama_data:
     driver: local
   qdrant_data:
+    driver: local
+  langfuse_db_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local

@@ -1,0 +1,35 @@
+# Prometheus scrape config para el stack llm_ops.
+#
+# 3 jobs:
+#   - api: métricas FastAPI estándar (http_*) + LLM-específicas (llm_*, agent_*, rag_*).
+#   - litellm: métricas del proxy (costes, requests por proveedor) si el callback
+#     prometheus está activo en litellm-config.yaml.
+#   - gpu-exporter: side-car que pinta nvidia-smi a Prometheus.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: "api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  - job_name: "litellm"
+    # LiteLLM redirige /metrics → /metrics/ con host absoluto; usar la ruta
+    # final evita un 307 que Prometheus no resuelve dentro de la red docker.
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["litellm:4000"]
+
+  - job_name: "gpu"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gpu-exporter:9835"]
+
+  # Auto-scrape del propio Prometheus para ver tiempos de scrape, etc.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
