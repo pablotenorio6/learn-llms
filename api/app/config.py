@@ -65,6 +65,19 @@ class Settings(BaseSettings):
     http_fetch_max_chars: int = 8000
     http_fetch_user_agent: str = "llmops-agent/0.1 (+https://github.com/local)"
 
+    # Agent compute/system tools
+    # Jail compartido por la tool filesystem y como cwd de python_exec. Ninguna
+    # tool sale de aquí: el acceso se resuelve con path.resolve() + is_relative_to.
+    tools_sandbox_dir: str = "/app/sandbox"
+    fs_max_read_bytes: int = 256_000
+    fs_max_write_bytes: int = 256_000
+    # python_exec: subproceso Python aislado con rlimits (CPU/memoria/ficheros) +
+    # timeout wall-clock. Aísla recursos y accidentes, NO es sandbox de seguridad
+    # contra código adversarial (eso exigiría network namespace / contenedor).
+    python_exec_timeout: float = 10.0
+    python_exec_max_output: int = 8000
+    python_exec_max_memory_mb: int = 256
+
     @property
     def api_keys_list(self) -> list[str]:
         return [k.strip() for k in self.api_keys.split(",") if k.strip()]

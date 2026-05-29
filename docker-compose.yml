@@ -206,6 +206,8 @@ services:
       - ./bench:/app/bench
       # docs/ es la carpeta vigilada por el watcher (RAG)
       - ./docs:/app/docs
+      # sandbox/ es el workspace de las tools filesystem y python_exec del agente
+      - ./sandbox:/app/sandbox
     depends_on:
       litellm:
         condition: service_healthy
