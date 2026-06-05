@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # contra código adversarial (eso exigiría network namespace / contenedor).
     python_exec_timeout: float = 10.0
     python_exec_max_output: int = 8000
-    python_exec_max_memory_mb: int = 256
+    python_exec_max_memory_mb: int = 512
 
     @property
     def api_keys_list(self) -> list[str]:

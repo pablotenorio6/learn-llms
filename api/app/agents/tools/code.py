@@ -3,7 +3,7 @@
 Aislamiento (en Linux, que es donde corre el contenedor api):
   - Subproceso `python -I` (modo aislado: ignora env vars de Python, no mete
     cwd en sys.path, no usa el site del usuario).
-  - rlimits vía preexec_fn: memoria (RLIMIT_AS), CPU (RLIMIT_CPU), tamaño de
+  - rlimits vía preexec_fn: memoria (RLIMIT_DATA), CPU (RLIMIT_CPU), tamaño de
     ficheros (RLIMIT_FSIZE) y nº de descriptores (RLIMIT_NOFILE).
   - Timeout wall-clock: si se pasa, se mata todo el grupo de procesos (SIGKILL).
   - Env mínimo: NO se heredan las variables del contenedor, así el código
@@ -45,7 +45,11 @@ def _make_preexec(timeout: float, max_memory_mb: int):
 
     def _limits() -> None:
         mem = max_memory_mb * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
+        # RLIMIT_DATA (heap/brk real), NO RLIMIT_AS (address space virtual):
+        # numpy/BLAS reservan arenas de VIRT enormes al importarse y RLIMIT_AS
+        # las mata aunque la RAM usada sea mínima. RLIMIT_DATA limita lo que de
+        # verdad consume y deja importar numpy/pandas.
+        resource.setrlimit(resource.RLIMIT_DATA, (mem, mem))
         cpu = int(math.ceil(timeout)) + 1
         resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
         fsize = 16 * 1024 * 1024  # 16 MB por fichero
@@ -57,7 +61,7 @@ def _make_preexec(timeout: float, max_memory_mb: int):
 
 @tool
 async def python_exec(code: str) -> dict:
-    """Ejecuta un fragmento de código PYTHON y devuelve su stdout/stderr. ÚSALA para cálculos complejos con varios pasos, manipulación de datos/strings, simulaciones, generar o transformar texto programáticamente, o cualquier tarea que se resuelva mejor con código que razonando a mano. Imprime tus resultados con print() — solo se captura lo que escribas a stdout/stderr. Tienes la librería estándar de Python; NO hay acceso a internet ni paquetes externos garantizados. El proceso tiene límite de tiempo y memoria y se mata si los excede. Para mera aritmética usa `calculator`, que es más directa.
+    """Ejecuta un fragmento de código PYTHON y devuelve su stdout/stderr. ÚSALA para cálculos complejos con varios pasos, manipulación de datos/strings, simulaciones, generar o transformar texto programáticamente, o cualquier tarea que se resuelva mejor con código que razonando a mano. Imprime tus resultados con print() — solo se captura lo que escribas a stdout/stderr. Tienes la librería estándar de Python más pandas y numpy (impórtalos como `pd`/`np`) para dataframes y cálculo numérico. NO hay acceso a internet ni otros paquetes externos. El proceso tiene límite de tiempo y memoria y se mata si los excede. Para mera aritmética usa `calculator`, que es más directa.
 
     Args:
         code: Código Python a ejecutar. Usa print() para devolver resultados.
@@ -74,7 +78,18 @@ async def python_exec(code: str) -> dict:
             f.write(src)
 
         # Env mínimo: sin secretos del contenedor. PATH básico para que arranque.
-        clean_env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": workdir}
+        # Capamos los hilos de BLAS/OpenMP a 1: con RLIMIT_DATA apretado, los
+        # thread pools de numpy reservan un arena por hilo y pueden chocar con el
+        # límite; además un snippet de un solo paso no gana nada paralelizando.
+        clean_env = {
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "LANG": "C.UTF-8",
+            "HOME": workdir,
+            "OMP_NUM_THREADS": "1",
+            "OPENBLAS_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
+            "NUMEXPR_NUM_THREADS": "1",
+        }
 
         try:
             proc = await asyncio.create_subprocess_exec(
