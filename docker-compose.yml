@@ -58,6 +58,15 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-llmops-changeme}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # AWS Bedrock (vacías => los modelos bedrock/* no estarán disponibles).
+      # Elige UN método de auth, no mezcles:
+      #  (A) Bedrock API key (bearer): solo AWS_BEARER_TOKEN_BEDROCK + region.
+      #  (B) IAM SigV4: AWS_ACCESS_KEY_ID (AKIA...) + AWS_SECRET_ACCESS_KEY.
+      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION_NAME=${AWS_REGION_NAME:-us-east-1}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
       # Langfuse (lo activamos vía callbacks en litellm-config.yaml).
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}

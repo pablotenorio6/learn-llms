@@ -48,6 +48,30 @@ model_list:
       model: anthropic/claude-haiku-4-5-20251001
       api_key: os.environ/ANTHROPIC_API_KEY
 
+  # ---- AWS Bedrock ----
+  # Las credenciales NO van aquí: LiteLLM las toma del entorno del contenedor
+  # (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION_NAME), que el
+  # docker-compose inyecta desde el .env. Igual que OpenAI/Anthropic.
+  #
+  # OJO con el model id: muchos modelos solo se sirven por INFERENCE PROFILE
+  # con prefijo de región (us./eu./apac.). Verifica el id exacto contra TU
+  # cuenta y región:  aws bedrock list-foundation-models --region <region>
+  # y habilita el modelo en la consola (Bedrock → Model access) antes de usarlo.
+  # Solo modelos con tool use (Converse API) sirven para el modo agente:
+  # Claude, Amazon Nova y Llama 3.1+ lo soportan.
+  - model_name: claude-sonnet-bedrock
+    litellm_params:
+      model: bedrock/global.anthropic.claude-sonnet-4-6
+      aws_region_name: os.environ/AWS_REGION_NAME
+  - model_name: claude-haiku-bedrock
+    litellm_params:
+      model: bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+  - model_name: claude-opus-bedrock
+    litellm_params:
+      model: bedrock/global.anthropic.claude-opus-4-8
+      aws_region_name: os.environ/AWS_REGION_NAME
+
 litellm_settings:
   # Tira silenciosamente parámetros que un proveedor concreto no entiende
   # (p.ej. presence_penalty con algunos endpoints) en vez de fallar.
