@@ -26,7 +26,7 @@ Proyecto de aprendizaje de despliegue/infraestructura de IA: asistente LLM local
 
 **Mejoras a corto plazo de lo ya construido:**
 - Reranker en el RAG (`bge-reranker-base`) — gran salto de calidad
-- Búsqueda híbrida vector + BM25 (Qdrant lo soporta nativo desde 1.10)
+- ~~Búsqueda híbrida vector + BM25~~ **HECHO** (app-side: BM25 en memoria + fusión RRF en `retriever.py`, ver gotcha #21). Pendiente opcional: migrar a sparse vectors nativos de Qdrant cuando el corpus crezca.
 - Más tools en el agente: filesystem sandboxed, http_fetch, calculadora, ejecución Python en subproceso aislado
 - Pre-classifier antes del agent loop para suprimir tools cuando la pregunta es trivial
 - Citas en línea: parsear `[source]` que el modelo emite y hacerlas clicables
@@ -86,12 +86,17 @@ api/app/
     rag.py             /v1/rag/documents (GET/POST/DELETE), /v1/rag/query, /v1/rag/reindex
     agents.py          /v1/agents/tools, /v1/agents/run (SSE de eventos del agente)
   rag/
-    parsers.py         txt/md/pdf/html → texto plano (pypdf, beautifulsoup)
+    parsers.py         txt/md/pdf/html → texto plano (pymupdf, beautifulsoup) +
+                       clean_text() (NFC, quita control chars, colapsa espacios)
     chunker.py         Recursive character splitter, sin deps externas
-    embedder.py        Wrapper sobre LLMClient.embed con batching
-    store.py           QdrantStore async: ensure_collection, upsert_chunks, delete_by_*, search
+    embedder.py        Wrapper sobre LLMClient.embed con batching + prefijos de
+                       tarea nomic (search_query:/search_document:, ver gotcha #19)
+    bm25.py            Índice BM25 Okapi en memoria (rama léxica del híbrido)
+    store.py           QdrantStore async: ensure_collection, upsert_chunks,
+                       delete_by_*, search, scroll_all · contador mutations
     indexer.py         Orquesta parse→chunk→embed→upsert · idempotencia por sha256(chunk)
-    retriever.py       query → embed → search → formatea como mensaje system
+    retriever.py       query → denso (Qdrant) + BM25 → fusión RRF → mensaje system
+                       (híbrido, ver gotcha #21)
     watcher.py         watchdog en background task (carpeta ./docs)
   agents/
     registry.py        @tool decorator con schema autogen desde signature + docstring
@@ -233,6 +238,14 @@ make shell                 # bash dentro del contenedor api
 17. **`/metrics` de LiteLLM:** (a) pide auth por defecto — apagarla con `litellm_settings.require_auth_for_metrics_endpoint: false`; (b) redirige `/metrics` → `/metrics/` con host absoluto, lo que Prometheus no resuelve dentro de la red docker. En `prometheus.yml`, `metrics_path: /metrics/` (con barra) evita el redirect.
 
 18. **Race condition de nombres de trace en Langfuse (`trace_id` vs `existing_trace_id`).** Síntoma: en Langfuse aparecen trazas raíz `litellm-acompletion` / `litellm-aembedding` mezcladas con las tuyas (`agent.run`, `chat.completions`), a veces para la *misma* petición. Causa: sobre un mismo `trace_id` escriben **dos** clientes Langfuse — el SDK de la app (que lo crea con su `name`) y el callback del proxy. En `langfuse.py` del proxy, si recibe `trace_id` **sin** `existing_trace_id` ni `trace_name`, hace upsert del trace poniendo `name = f"litellm-{call_type}"`; como ambos flushean async, el último en llegar pisa el `name`. **Fix:** pasar `existing_trace_id` (no `trace_id`) en el metadata → el proxy hace `trace_params={"id": ...}` sin tocar el `name`. Verificado vía la API pública de Langfuse (`GET /api/public/traces`): con `trace_id` ~13 de 16 trazas de agente salían renombradas; con `existing_trace_id` el nombre se mantiene estable. Aparte, **`LLMClient.embed()` debe adjuntar metadata igual que los métodos de chat** (antes no lo hacía) o todo embedding sale como traza huérfana aunque haya trace activo (p.ej. el embed de `rag_search` dentro de un `agent.run`).
+
+19. **`nomic-embed-text` exige prefijos de tarea.** El modelo se entrenó con una instrucción incrustada en el texto: documentos → `search_document: <texto>`, queries → `search_query: <texto>`. **Ollama NO los inyecta**, hay que ponerlos en el cliente (`embedder.py`, `_prepare()`). Sin ellos la recuperación se degrada de forma sutil pero grave: scores apelotonados (todo ~0.5-0.6) y vecinos semánticamente erróneos. Query y documento DEBEN usar su prefijo correspondiente — mezclar (o re-indexar solo un lado) rompe la comparación. Verificación rápida: `cos(vector_guardado, embed("search_document: "+texto))` debe dar ~1.0. Cambiar esto obliga a **re-indexar todo** (los vectores viejos están en otro espacio).
+
+20. **Editar `litellm-config.yaml` NO basta con `docker compose up -d litellm`.** La config entra por bind-mount; al cambiar su *contenido* la definición del servicio no cambia, así que compose deja el contenedor "up-to-date" sin recrearlo, y LiteLLM ya parseó el YAML viejo en memoria al arrancar. Síntoma típico: cambias el model id de un alias (p.ej. prefijo `us.`/`global.` de Bedrock) y el error sigue mostrando el id antiguo. **Fix:** `docker compose restart litellm` (o `--force-recreate`). Verifica lo que cargó de verdad con `curl http://localhost:4000/v1/model/info -H "Authorization: Bearer $LITELLM_MASTER_KEY"`. (Relacionado: para Bedrock con inference profiles, pasa el id con prefijo regional `us.`/`eu.`/`apac.` o el ARN completo; el prefijo `global.` puede no reconocerlo según versión y acaba mandando el id pelado.)
+
+21. **RAG es híbrido (denso + BM25 con RRF), no solo vectorial.** `retriever.py` consulta la rama densa en Qdrant Y un índice BM25 en memoria (`bm25.py`), y fusiona ambos rankings con Reciprocal Rank Fusion ponderada (`rag_*` en `config.py`). Por qué: nomic difumina queries con términos exactos o "meta" ausentes del texto (nombres, siglas, "currículum"); BM25 los rescata. RRF fusiona por *posición*, no por magnitud, porque coseno y BM25 no son comparables en escala. El índice BM25 se reconstruye cuando `store.mutations` cambia (no en cada query). Consecuencia visible: el `score` de los hits ahora es el valor RRF (~0.04), no el coseno. Si recuperación va mal, distingue las dos ramas por separado antes de tocar la fusión (lo hice query a query contra `/v1/rag/query` y scroll de Qdrant).
+
+22. **Los uploads de la UI (`upload://…`) no se persisten en disco.** Van directos a Qdrant; los bytes originales no se guardan. Por tanto `POST /v1/rag/reindex` —que recorre `RAG_DOCS_DIR`— **no los alcanza**: solo reindexa lo que esté en `./docs`. Para re-extraer/re-indexar un documento subido por la UI (p.ej. tras cambiar el parser) hay que volver a subirlo, o dejarlo en `./docs` (el watcher lo coge, pero con `source` distinto: `/app/docs/x.pdf` ≠ `upload://x.pdf`, así que conviene borrar el viejo para no duplicar). La extracción de PDF usa **PyMuPDF** (`parsers.py`), mejor que pypdf en espaciado/encoding; aun así PDFs con fuentes raras (CVs con plantilla) pueden dejar algún artefacto menor que `clean_text()` no resuelve del todo.
 
 ---
 
