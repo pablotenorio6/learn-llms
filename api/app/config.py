@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     rag_docs_dir: str = "/app/docs"
     rag_watcher_enabled: bool = True
+    # Búsqueda híbrida (denso + BM25 fusionados con RRF). El léxico rescata
+    # queries con términos exactos/meta que el embedding difumina.
+    rag_hybrid_enabled: bool = True
+    rag_candidate_k: int = 20       # candidatos por rama antes de fusionar
+    rag_rrf_k: int = 60             # constante RRF (amortigua ranks bajos)
+    rag_bm25_weight: float = 1.5    # peso de la rama léxica en la fusión
+    rag_dense_weight: float = 1.0   # peso de la rama densa
 
     # Observabilidad
     # Langfuse self-hosted (v2). Si langfuse_enabled=false o falta secret_key, no se traza.

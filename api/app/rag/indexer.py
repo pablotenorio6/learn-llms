@@ -74,7 +74,7 @@ class Indexer:
         # Antes de subir, borra cualquier chunk previo del MISMO source (cubre cambios)
         await self.store.delete_by_source(source)
 
-        vectors = await self.embedder.embed(chunk_texts)
+        vectors = await self.embedder.embed(chunk_texts, task="document")
         n = await self.store.upsert_chunks(
             doc_id=doc_id,
             source=source,

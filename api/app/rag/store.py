@@ -29,6 +29,7 @@ class SearchHit:
     source: str
     doc_id: str
     chunk_idx: int
+    id: str = ""
 
 
 class QdrantStore:
@@ -37,6 +38,9 @@ class QdrantStore:
         self.collection = collection
         self.embed_dim = embed_dim
         self._client = AsyncQdrantClient(url=url)
+        # Se incrementa en cada upsert/delete. El retriever lo usa para saber
+        # cuándo reconstruir su índice BM25 en memoria.
+        self.mutations = 0
 
     async def aclose(self) -> None:
         await self._client.close()
@@ -98,6 +102,7 @@ class QdrantStore:
                 models.PointStruct(id=point_id, vector=vec, payload=payload)
             )
         await self._client.upsert(collection_name=self.collection, points=points)
+        self.mutations += 1
         return len(points)
 
     async def delete_doc(self, doc_id: str) -> int:
@@ -112,6 +117,7 @@ class QdrantStore:
                 )
             ),
         )
+        self.mutations += 1
         return n
 
     async def delete_by_source(self, source: str) -> int:
@@ -124,6 +130,7 @@ class QdrantStore:
                 )
             ),
         )
+        self.mutations += 1
         return n
 
     async def count_by(self, doc_id: str | None = None, source: str | None = None) -> int:
@@ -181,5 +188,36 @@ class QdrantStore:
                 source=pl.get("source", "?"),
                 doc_id=pl.get("doc_id", "?"),
                 chunk_idx=int(pl.get("chunk_idx", 0)),
+                id=str(p.id),
             ))
         return hits
+
+    async def scroll_all(self) -> list[SearchHit]:
+        """Devuelve todos los chunks (sin vectores) para construir el índice BM25.
+
+        score=0.0 placeholder; el BM25 lo recalcula. Para corpus moderados es
+        barato; si creciera mucho, migrar a sparse vectors nativos de Qdrant.
+        """
+        offset = None
+        out: list[SearchHit] = []
+        while True:
+            points, offset = await self._client.scroll(
+                collection_name=self.collection,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for p in points:
+                pl = p.payload or {}
+                out.append(SearchHit(
+                    text=pl.get("text", ""),
+                    score=0.0,
+                    source=pl.get("source", "?"),
+                    doc_id=pl.get("doc_id", "?"),
+                    chunk_idx=int(pl.get("chunk_idx", 0)),
+                    id=str(p.id),
+                ))
+            if offset is None:
+                break
+        return out
