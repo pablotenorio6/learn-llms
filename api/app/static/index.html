@@ -59,22 +59,14 @@
     }
     button.icon:hover { background: var(--bg); }
 
-    /* Toggle base (RAG y Agente) */
-    .toggle {
-      display: flex; align-items: center; gap: 6px; font-size: 11px;
-      color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
-      padding: 4px 8px 4px 6px; cursor: pointer; user-select: none;
+    /* Badge de modo (siempre agente) */
+    .mode-badge {
+      font-size: 10px; font-family: ui-monospace, monospace;
+      letter-spacing: 0.4px; text-transform: uppercase;
+      color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      border-radius: 4px; padding: 4px 8px; user-select: none;
     }
-    .toggle:hover { background: var(--bg); }
-    .toggle.active { color: var(--accent); border-color: var(--accent); }
-    .toggle input { margin: 0; cursor: pointer; }
-    .toggle.disabled { opacity: 0.45; cursor: not-allowed; }
-    .toggle .count {
-      font-family: ui-monospace, monospace; background: var(--bg);
-      padding: 1px 6px; border-radius: 3px; font-size: 10px;
-      border: 1px solid var(--border);
-    }
-    .toggle.active .count { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 
     /* System prompt panel */
     .sysprompt { background: var(--surface); border-bottom: 1px solid var(--border); }
@@ -247,16 +239,7 @@
         <input type="range" id="temp" min="0" max="2" step="0.1" value="0.2">
         <span id="temp-val">0.2</span>
       </div>
-      <label class="toggle" id="rag-toggle" title="Si está activo, antes de cada mensaje recuperamos chunks de Qdrant y los inyectamos como contexto">
-        <input type="checkbox" id="rag-checkbox">
-        <span>RAG</span>
-        <span class="count" id="rag-count">0</span>
-      </label>
-      <label class="toggle" id="agent-toggle" title="Modo agente: el modelo decide cuándo llamar tools (rag_search, etc.) y el bucle se cierra cuando da una respuesta">
-        <input type="checkbox" id="agent-checkbox">
-        <span>Agente</span>
-        <span class="count" id="agent-count">0</span>
-      </label>
+      <span class="mode-badge" title="Cada mensaje pasa por el bucle de agente: el modelo decide cuándo usar tools (rag_search, python_exec, etc.)">modo agente</span>
       <button class="icon" id="clear" title="Limpiar historial">↻</button>
     </div>
   </header>
@@ -279,8 +262,8 @@
     <div class="messages" id="messages">
       <div class="empty">
         Empieza escribiendo un mensaje. Modelo arriba, temperatura al lado.<br>
-        <small>Activa <strong>RAG</strong> para inyectar chunks automáticamente, o <strong>Agente</strong> para que el modelo decida cuándo usar tools.</small><br>
-        <small>Arrastra archivos a la ventana para indexarlos. Atajos: <code>Enter</code> envía · <code>Shift+Enter</code> salto.</small>
+        <small>Cada mensaje pasa por el <strong>bucle de agente</strong>: el modelo decide cuándo usar tools (RAG, Python, web…).</small><br>
+        <small>Arrastra archivos a la ventana para indexarlos en la base de conocimiento. Atajos: <code>Enter</code> envía · <code>Shift+Enter</code> salto.</small>
       </div>
     </div>
   </main>
@@ -312,19 +295,10 @@
     const sysToggle   = $('#sysprompt-toggle');
     const sysInput    = $('#sysprompt-input');
     const sysStatus   = $('#sysprompt-status');
-    const ragToggle   = $('#rag-toggle');
-    const ragCheckbox = $('#rag-checkbox');
-    const ragCount    = $('#rag-count');
-    const agentToggle = $('#agent-toggle');
-    const agentCheckbox = $('#agent-checkbox');
-    const agentCount  = $('#agent-count');
     const dropzone    = $('#dropzone');
 
     const LS_SYSTEM = 'llmops.systemPrompt';
     const LS_SYSTEM_OPEN = 'llmops.systemPromptOpen';
-    const LS_RAG    = 'llmops.ragEnabled';
-    const LS_AGENT  = 'llmops.agentEnabled';
-    const RAG_TOP_K = 5;
     const AGENT_MAX_ITER = 8;
 
     let history = [];
@@ -354,56 +328,6 @@
       if (open) sysInput.focus();
     });
 
-    // ---------- RAG / Agente ----------
-
-    function loadToggles() {
-      ragCheckbox.checked = localStorage.getItem(LS_RAG) === '1';
-      agentCheckbox.checked = localStorage.getItem(LS_AGENT) === '1';
-      updateToggleUI();
-    }
-    function updateToggleUI() {
-      ragToggle.classList.toggle('active', ragCheckbox.checked);
-      agentToggle.classList.toggle('active', agentCheckbox.checked);
-      // En modo agente, RAG inyectado se desactiva (la tool rag_search lo hace)
-      ragToggle.classList.toggle('disabled', agentCheckbox.checked);
-      ragCheckbox.disabled = agentCheckbox.checked;
-    }
-    ragCheckbox.addEventListener('change', () => {
-      localStorage.setItem(LS_RAG, ragCheckbox.checked ? '1' : '0');
-      updateToggleUI();
-    });
-    agentCheckbox.addEventListener('change', () => {
-      localStorage.setItem(LS_AGENT, agentCheckbox.checked ? '1' : '0');
-      updateToggleUI();
-    });
-
-    async function refreshRagDocsCount() {
-      try {
-        const r = await fetch('/v1/rag/documents');
-        if (!r.ok) { ragCount.textContent = '?'; return; }
-        const data = await r.json();
-        ragCount.textContent = String(data.data?.length ?? 0);
-      } catch { ragCount.textContent = '?'; }
-    }
-    async function refreshAgentToolsCount() {
-      try {
-        const r = await fetch('/v1/agents/tools');
-        if (!r.ok) { agentCount.textContent = '?'; return; }
-        const data = await r.json();
-        agentCount.textContent = String(data.data?.length ?? 0);
-      } catch { agentCount.textContent = '?'; }
-    }
-
-    async function ragQuery(query) {
-      const r = await fetch('/v1/rag/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, top_k: RAG_TOP_K }),
-      });
-      if (!r.ok) throw new Error(`RAG query falló: HTTP ${r.status} ${(await r.text()).slice(0,200)}`);
-      return r.json();
-    }
-
     // ---------- Drag & drop ----------
 
     let dragDepth = 0;
@@ -421,7 +345,6 @@
       dragDepth = 0; dropzone.classList.remove('visible');
       const files = [...(e.dataTransfer.files || [])];
       for (const f of files) await uploadFile(f);
-      await refreshRagDocsCount();
     });
     async function uploadFile(file) {
       clearEmpty();
@@ -455,19 +378,50 @@
         const r = await fetch('/v1/models');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = await r.json();
-        const models = (data.data || []).map(m => m.id).sort();
+        const models = (data.data || []).map(m => m.id);
         modelSelect.innerHTML = '';
         if (models.length === 0) {
           modelSelect.innerHTML = '<option value="">(sin modelos: corre `make pull-models`)</option>';
           modelSelect.disabled = true; setStatus('err', 'sin modelos'); return;
         }
-        for (const id of models) {
-          const opt = document.createElement('option');
-          opt.value = id; opt.textContent = id;
-          modelSelect.appendChild(opt);
+        // Clasificación por convención de alias (ver litellm-config.yaml).
+        // El orden del array define el orden de los grupos en el desplegable.
+        const GROUPS = [
+          { key: 'local',     label: 'Open source (local)' },
+          { key: 'bedrock',   label: 'AWS Bedrock' },
+          { key: 'openai',    label: 'OpenAI (directo)' },
+          { key: 'anthropic', label: 'Anthropic (directo)' },
+          { key: 'embed',     label: 'Embeddings' },
+          { key: 'other',     label: 'Otros' },
+        ];
+        const classify = (id) => {
+          if (/embed/i.test(id)) return 'embed';
+          if (/bedrock/i.test(id)) return 'bedrock';
+          if (/(^|[-_])local([-_]|$)|llama|qwen|phi|mistral|gemma/i.test(id)) return 'local';
+          if (/gpt|openai|^o\d/i.test(id)) return 'openai';
+          if (/claude|anthropic/i.test(id)) return 'anthropic';
+          return 'other';
+        };
+        const buckets = {};
+        for (const id of models) (buckets[classify(id)] ??= []).push(id);
+        for (const g of GROUPS) {
+          const ids = (buckets[g.key] || []).sort();
+          if (ids.length === 0) continue;
+          const og = document.createElement('optgroup');
+          og.label = g.label;
+          for (const id of ids) {
+            const opt = document.createElement('option');
+            opt.value = id; opt.textContent = id;
+            og.appendChild(opt);
+          }
+          modelSelect.appendChild(og);
         }
-        const chat = models.find(m => /llama|qwen|mistral|phi|gemma/i.test(m) && !/embed/i.test(m));
-        modelSelect.value = chat || models[0];
+        // Por defecto: qwen-local (mejor disciplina de tools), si no cualquier
+        // local de chat, si no el primer modelo que no sea de embeddings.
+        const prefer = models.find(m => /qwen/i.test(m) && !/embed/i.test(m))
+                    || models.find(m => classify(m) === 'local' && !/embed/i.test(m))
+                    || models.find(m => !/embed/i.test(m));
+        modelSelect.value = prefer || models[0];
         modelSelect.disabled = false; setStatus('ok', 'conectado');
       } catch (e) {
         setStatus('err', `error: ${e.message}`);
@@ -588,100 +542,6 @@
         block.querySelector('pre').textContent = JSON.stringify(ev.result, null, 2);
       }
       scroll();
-    }
-
-    // ---------- Send (chat normal con o sin RAG) ----------
-
-    async function sendChat() {
-      const text = inputEl.value.trim();
-      if (!text) return;
-      const model = modelSelect.value;
-      if (!model) { appendErr('Selecciona un modelo'); return; }
-
-      clearEmpty();
-      history.push({ role: 'user', content: text });
-      appendMsg('user', text);
-      inputEl.value = ''; autoresize();
-
-      const { wrap: assistWrap, bubble: assistBubble } = appendMsg('assistant', '');
-      assistWrap.classList.add('streaming');
-      setSending(true);
-
-      currentController = new AbortController();
-      const startTime = performance.now();
-      let ttft = null, chunkCount = 0, fullText = '';
-      let ragHits = null;
-
-      try {
-        const extraSystems = [];
-        if (ragCheckbox.checked && !agentCheckbox.checked) {
-          try {
-            const ragRes = await ragQuery(text);
-            ragHits = ragRes.hits || [];
-            if (ragRes.system_message) extraSystems.push(ragRes.system_message);
-          } catch (e) { appendErr(`(RAG falló) ${e.message}`); }
-        }
-
-        const resp = await fetch('/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model, messages: buildMessages(extraSystems),
-            temperature: parseFloat(tempInput.value), stream: true,
-          }),
-          signal: currentController.signal,
-        });
-        if (!resp.ok) {
-          let detail = '';
-          try { detail = JSON.stringify(await resp.json()); } catch { detail = await resp.text(); }
-          throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 400)}`);
-        }
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const events = buffer.split('\n\n');
-          buffer = events.pop() || '';
-          for (const ev of events) {
-            for (const line of ev.split('\n')) {
-              if (!line.startsWith('data: ')) continue;
-              const payload = line.slice(6);
-              if (payload === '[DONE]') continue;
-              let obj; try { obj = JSON.parse(payload); } catch { continue; }
-              if (obj.error) throw new Error(obj.error.message || JSON.stringify(obj.error));
-              const piece = obj.choices?.[0]?.delta?.content;
-              if (piece) {
-                if (ttft === null) ttft = performance.now() - startTime;
-                chunkCount++; fullText += piece;
-                assistBubble.textContent = fullText; scroll();
-              }
-            }
-          }
-        }
-        const totalMs = performance.now() - startTime;
-        if (fullText) {
-          history.push({ role: 'assistant', content: fullText });
-          appendMeta(assistWrap, ttft ?? totalMs, chunkCount, totalMs, ragHits, null);
-        } else { assistBubble.textContent = '(sin respuesta)'; }
-      } catch (e) {
-        if (e.name === 'AbortError') {
-          assistBubble.textContent = (fullText || '') + '  [cancelado]';
-          if (fullText) history.push({ role: 'assistant', content: fullText });
-          else history.pop();
-        } else {
-          assistWrap.remove();
-          appendErr(`Error: ${e.message}`);
-          history.pop();
-        }
-      } finally {
-        assistWrap.classList.remove('streaming');
-        setSending(false);
-        currentController = null;
-        inputEl.focus();
-      }
     }
 
     // ---------- Send (modo agente: /v1/agents/run con SSE de eventos) ----------
@@ -823,8 +683,7 @@
         currentController?.abort();
         return;
       }
-      if (agentCheckbox.checked) sendAgent();
-      else sendChat();
+      sendAgent();
     });
     inputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); formEl.requestSubmit(); }
@@ -832,11 +691,7 @@
     inputEl.addEventListener('input', autoresize);
 
     loadSystemPrompt();
-    loadToggles();
     loadModels();
-    refreshRagDocsCount();
-    refreshAgentToolsCount();
-    setInterval(refreshRagDocsCount, 15000);
     inputEl.focus();
   </script>
 </body>
