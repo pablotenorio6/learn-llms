@@ -13,6 +13,7 @@ Eventos emitidos:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -183,6 +184,9 @@ class AgentLoop:
                     "tool_calls": collected_tool_calls,
                 })
 
+                # Anunciamos todas las tool_calls antes de ejecutar ninguna:
+                # así la UI pinta todas las cards en "running" a la vez.
+                parsed_calls: list[tuple[str, str, dict[str, Any]]] = []
                 for tc in collected_tool_calls:
                     call_id = tc["id"]
                     fn = tc.get("function") or {}
@@ -196,69 +200,24 @@ class AgentLoop:
 
                     yield {"type": "tool_call", "id": call_id, "name": name, "arguments": raw_args}
                     total_tool_calls += 1
+                    parsed_calls.append((call_id, name, raw_args))
 
-                    tool = self.tools_by_name.get(name)
-                    if not tool:
-                        err = f"tool '{name}' no está en la allow-list"
-                        agent_tool_calls_total.labels(tool=name or "unknown", outcome="unknown").inc()
-                        yield {"type": "tool_error", "id": call_id, "name": name, "error": err}
-                        msgs.append({
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": serialize_for_llm({"error": err}),
-                        })
-                        continue
-
-                    # Span por tool: cuelga del span de iteración (current_observation_id).
-                    tool_span = tracer.start_span(
-                        f"tool.{name}",
-                        input=raw_args if tracer.log_payloads else None,
-                        metadata={"tool_call_id": call_id},
-                    )
-                    start = time.perf_counter()
-                    outcome = "ok"
-                    try:
-                        result = await tool.call(self.ctx, raw_args)
-                        duration_s = time.perf_counter() - start
-                        agent_tool_duration.labels(tool=name).observe(duration_s)
-                        if tracer.log_payloads:
-                            tool_span.update(output=result)
-                        yield {
-                            "type": "tool_result",
-                            "id": call_id,
-                            "name": name,
-                            "result": result,
-                            "duration_ms": round(duration_s * 1000, 2),
-                        }
-                        msgs.append({
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": serialize_for_llm(result),
-                        })
-                    except ToolArgsError as e:
-                        outcome = "bad_args"
-                        err = f"args inválidos: {e}"
-                        tool_span.update(level="ERROR", status_message=err)
-                        yield {"type": "tool_error", "id": call_id, "name": name, "error": err}
-                        msgs.append({
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": serialize_for_llm({"error": err}),
-                        })
-                    except Exception as e:
-                        outcome = "error"
-                        log.exception("agent.tool_failed", extra={"tool": name})
-                        err = f"{type(e).__name__}: {e}"
-                        tool_span.update(level="ERROR", status_message=err)
-                        yield {"type": "tool_error", "id": call_id, "name": name, "error": err}
-                        msgs.append({
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": serialize_for_llm({"error": err}),
-                        })
-                    finally:
-                        tool_span.end()
-                        agent_tool_calls_total.labels(tool=name, outcome=outcome).inc()
+                # Ejecución: si el modelo pidió varias tools en la misma
+                # respuesta, son independientes por definición (no ha visto el
+                # resultado de ninguna), así que se corren concurrentes y la
+                # iteración cuesta max(duraciones) en vez de sum(duraciones).
+                # gather preserva el orden, con lo que eventos y mensajes
+                # role=tool salen deterministas.
+                if len(parsed_calls) == 1:
+                    outcomes = [await self._execute_tool(*parsed_calls[0], tracer=tracer)]
+                else:
+                    outcomes = await asyncio.gather(*(
+                        self._execute_tool(cid, nm, args, tracer=tracer)
+                        for cid, nm, args in parsed_calls
+                    ))
+                for event, tool_msg in outcomes:
+                    yield event
+                    msgs.append(tool_msg)
             finally:
                 if iter_status == "error" and iter_status_message:
                     iter_handle.update(level="ERROR", status_message=iter_status_message)
@@ -271,3 +230,79 @@ class AgentLoop:
             "iterations": self.max_iterations,
             "tool_calls": total_tool_calls,
         }
+
+    async def _execute_tool(
+        self,
+        call_id: str,
+        name: str,
+        raw_args: dict[str, Any],
+        *,
+        tracer,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Ejecuta una tool y devuelve (evento SSE, mensaje role=tool).
+
+        No hace yield directamente para poder correr varias en paralelo con
+        asyncio.gather (un async generator no se puede gather-ear). El caller
+        emite los eventos y encola los mensajes en orden.
+        """
+        def _tool_msg(content: Any) -> dict[str, Any]:
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": serialize_for_llm(content),
+            }
+
+        tool = self.tools_by_name.get(name)
+        if not tool:
+            err = f"tool '{name}' no está en la allow-list"
+            agent_tool_calls_total.labels(tool=name or "unknown", outcome="unknown").inc()
+            return (
+                {"type": "tool_error", "id": call_id, "name": name, "error": err},
+                _tool_msg({"error": err}),
+            )
+
+        # Span por tool: cuelga del span de iteración (current_observation_id;
+        # gather copia el contexto al crear cada task, así que se propaga bien).
+        tool_span = tracer.start_span(
+            f"tool.{name}",
+            input=raw_args if tracer.log_payloads else None,
+            metadata={"tool_call_id": call_id},
+        )
+        start = time.perf_counter()
+        outcome = "ok"
+        try:
+            result = await tool.call(self.ctx, raw_args)
+            duration_s = time.perf_counter() - start
+            agent_tool_duration.labels(tool=name).observe(duration_s)
+            if tracer.log_payloads:
+                tool_span.update(output=result)
+            return (
+                {
+                    "type": "tool_result",
+                    "id": call_id,
+                    "name": name,
+                    "result": result,
+                    "duration_ms": round(duration_s * 1000, 2),
+                },
+                _tool_msg(result),
+            )
+        except ToolArgsError as e:
+            outcome = "bad_args"
+            err = f"args inválidos: {e}"
+            tool_span.update(level="ERROR", status_message=err)
+            return (
+                {"type": "tool_error", "id": call_id, "name": name, "error": err},
+                _tool_msg({"error": err}),
+            )
+        except Exception as e:
+            outcome = "error"
+            log.exception("agent.tool_failed", extra={"tool": name})
+            err = f"{type(e).__name__}: {e}"
+            tool_span.update(level="ERROR", status_message=err)
+            return (
+                {"type": "tool_error", "id": call_id, "name": name, "error": err},
+                _tool_msg({"error": err}),
+            )
+        finally:
+            tool_span.end()
+            agent_tool_calls_total.labels(tool=name, outcome=outcome).inc()

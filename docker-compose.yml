@@ -8,7 +8,10 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-10m}
+      # 30m: el cold-load del modelo (~5-10 s) solo se paga tras media hora de
+      # inactividad. Súbelo a -1 (nunca descargar) si la GPU no se usa para
+      # otra cosa; bájalo si necesitas liberar VRAM antes.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_PARALLEL=2
       - OLLAMA_FLASH_ATTENTION=1
     deploy:

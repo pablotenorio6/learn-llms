@@ -137,12 +137,20 @@ async def _stream_chunks(
         )
 
         finish_reason: str | None = None
+        # is_disconnected() hace un receive() del ASGI por llamada; a decenas
+        # de tokens/s es overhead puro. Lo comprobamos como mucho cada 250 ms:
+        # la cancelación sigue siendo casi inmediata y el hot path por token
+        # queda limpio.
+        last_disconnect_check = 0.0
 
         try:
             async for raw in client.chat_stream(body, generation_name="chat.stream"):
-                if await request.is_disconnected():
-                    log.info("chat.client_disconnected", extra={"id": completion_id})
-                    return
+                now = time.monotonic()
+                if now - last_disconnect_check >= 0.25:
+                    last_disconnect_check = now
+                    if await request.is_disconnected():
+                        log.info("chat.client_disconnected", extra={"id": completion_id})
+                        return
 
                 choices = raw.get("choices") or []
                 if not choices:

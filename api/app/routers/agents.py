@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -94,12 +95,19 @@ async def run_agent(body: AgentRunRequest, request: Request):
         final_error: str | None = None
         iter_count = 0
         tool_count = 0
+        # Comprobar desconexión como mucho cada 250 ms: is_disconnected() hace
+        # un receive() del ASGI por llamada y los content_delta llegan a
+        # decenas por segundo.
+        last_disconnect_check = 0.0
         try:
             try:
                 async for ev in loop.run(body.model, msgs, options=options):
-                    if await request.is_disconnected():
-                        log.info("agent.client_disconnected")
-                        return
+                    now = time.monotonic()
+                    if now - last_disconnect_check >= 0.25:
+                        last_disconnect_check = now
+                        if await request.is_disconnected():
+                            log.info("agent.client_disconnected")
+                            return
                     if ev.get("type") == "final":
                         final_content = ev.get("content")
                         iter_count = int(ev.get("iterations") or 0)

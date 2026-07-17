@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,6 +21,46 @@ from app.services.llm_client import LLMClient
 STATIC_DIR = Path(__file__).parent / "static"
 
 log = logging.getLogger(__name__)
+
+
+async def _warmup(client: LLMClient, settings) -> None:
+    """Precalienta los modelos por defecto en background.
+
+    Ollama carga el modelo en VRAM en el primer uso (y lo descarga al expirar
+    OLLAMA_KEEP_ALIVE); ese cold-load son varios segundos que, sin warm-up,
+    paga el primer mensaje del usuario. Aquí lo pagamos nosotros al arrancar:
+    un chat de 1 token al modelo de chat por defecto y un embed mínimo al de
+    embeddings (el RAG lo usa en la primera query). Cualquier fallo se loguea
+    y se ignora: el warm-up nunca debe tumbar ni retrasar la API.
+    """
+    from app.models import ChatCompletionRequest, ChatMessage
+
+    t0 = time.perf_counter()
+    try:
+        await client.chat(
+            ChatCompletionRequest(
+                model=settings.default_chat_model,
+                messages=[ChatMessage(role="user", content="ping")],
+                max_tokens=1,
+                temperature=0.0,
+            ),
+            generation_name="warmup.chat",
+        )
+        log.info("warmup.chat_ok", extra={
+            "model": settings.default_chat_model,
+            "duration_s": round(time.perf_counter() - t0, 2),
+        })
+    except Exception as e:
+        log.warning("warmup.chat_failed", extra={"model": settings.default_chat_model, "err": str(e)})
+    t1 = time.perf_counter()
+    try:
+        await client.embed(settings.default_embed_model, ["warmup"], generation_name="warmup.embed")
+        log.info("warmup.embed_ok", extra={
+            "model": settings.default_embed_model,
+            "duration_s": round(time.perf_counter() - t1, 2),
+        })
+    except Exception as e:
+        log.warning("warmup.embed_failed", extra={"model": settings.default_embed_model, "err": str(e)})
 
 
 @asynccontextmanager
@@ -59,7 +101,11 @@ async def lifespan(app: FastAPI):
             embed_dim=settings.rag_embed_dim,
         )
         await store.ensure_collection()
-        embedder = Embedder(client=client, model=settings.default_embed_model)
+        embedder = Embedder(
+            client=client,
+            model=settings.default_embed_model,
+            query_cache_size=settings.embed_query_cache_size,
+        )
         indexer = Indexer(
             store=store,
             embedder=embedder,
@@ -83,10 +129,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("rag.init_failed", extra={"err": str(e)})
 
+    warmup_task: asyncio.Task | None = None
+    if settings.warmup_enabled:
+        warmup_task = asyncio.create_task(_warmup(client, settings))
+
     log.info("api.startup", extra={"litellm_base_url": settings.litellm_base_url})
     try:
         yield
     finally:
+        if warmup_task is not None and not warmup_task.done():
+            warmup_task.cancel()
         if app.state.watcher:
             await app.state.watcher.stop()
         if app.state.rag and app.state.rag.get("store") is not None:

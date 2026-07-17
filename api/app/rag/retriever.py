@@ -13,6 +13,7 @@ El índice BM25 vive en memoria y se reconstruye cuando `store.mutations` cambia
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -108,15 +109,27 @@ class Retriever:
             input=text if tracer.log_payloads else None,
             metadata={"top_k": top_k, "query_len": len(text), "hybrid": settings.rag_hybrid_enabled},
         ) as span:
-            vec = await self.embedder.embed_one(text, task="query")
-
             if not settings.rag_hybrid_enabled:
+                vec = await self.embedder.embed_one(text, task="query")
                 hits = await self.store.search(vector=vec, top_k=top_k)
             else:
                 cand_k = max(top_k, settings.rag_candidate_k)
-                dense_hits = await self.store.search(vector=vec, top_k=cand_k)
-                await self._ensure_bm25()
-                bm25_hits = self._bm25.search(text, cand_k)
+
+                # Las dos ramas no dependen entre sí: la densa necesita el
+                # embedding de la query (roundtrip a LiteLLM→Ollama) y la
+                # léxica el índice BM25 (que puede tocar reconstruirse con un
+                # scroll a Qdrant). Solaparlas ahorra el mínimo de las dos.
+                async def _dense_branch() -> list[SearchHit]:
+                    vec = await self.embedder.embed_one(text, task="query")
+                    return await self.store.search(vector=vec, top_k=cand_k)
+
+                async def _lexical_branch() -> list[tuple[str, float]]:
+                    await self._ensure_bm25()
+                    return self._bm25.search(text, cand_k)
+
+                dense_hits, bm25_hits = await asyncio.gather(
+                    _dense_branch(), _lexical_branch()
+                )
                 hits = self._fuse(
                     dense_hits, bm25_hits, top_k,
                     settings.rag_rrf_k, settings.rag_dense_weight, settings.rag_bm25_weight,

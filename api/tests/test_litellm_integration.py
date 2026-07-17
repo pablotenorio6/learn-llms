@@ -24,6 +24,9 @@ os.environ.setdefault("LITELLM_BASE_URL", "http://x:1")
 os.environ.setdefault("LITELLM_MASTER_KEY", "sk-test")
 os.environ.setdefault("QDRANT_HOST", "http://x:6333")
 os.environ.setdefault("RAG_WATCHER_ENABLED", "false")
+# El warm-up usa el LLMClient real (apunta a un host inexistente en tests);
+# fallaría inofensivamente pero mete ruido y latencia — mejor apagado.
+os.environ.setdefault("WARMUP_ENABLED", "false")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -49,28 +52,28 @@ class FakeLLM:
     async def list_models(self):
         return list(self.models_response)
 
-    async def chat(self, req):
+    async def chat(self, req, **kwargs):
         assert self.chat_response is not None
         return self.chat_response
 
-    async def chat_stream(self, req) -> AsyncIterator[dict[str, Any]]:
+    async def chat_stream(self, req, **kwargs) -> AsyncIterator[dict[str, Any]]:
         for c in self.chat_stream_chunks:
             yield c
 
-    async def chat_with_tools(self, model, messages, tools, options=None):
+    async def chat_with_tools(self, model, messages, tools, options=None, **kwargs):
         assert self.tools_stream_iterations
         chunks = self.tools_stream_iterations[self._iter_idx]
         self._iter_idx += 1
         # Simulamos agregación devolviendo solo el último chunk como respuesta.
         return chunks[-1]
 
-    async def chat_with_tools_stream(self, model, messages, tools, options=None) -> AsyncIterator[dict[str, Any]]:
+    async def chat_with_tools_stream(self, model, messages, tools, options=None, **kwargs) -> AsyncIterator[dict[str, Any]]:
         chunks = self.tools_stream_iterations[self._iter_idx]
         self._iter_idx += 1
         for c in chunks:
             yield c
 
-    async def embed(self, model, inputs):
+    async def embed(self, model, inputs, **kwargs):
         return self.embed_response or {"embeddings": [[0.0] * 3 for _ in inputs], "prompt_eval_count": len(inputs)}
 
 

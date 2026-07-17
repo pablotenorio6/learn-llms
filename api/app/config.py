@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     default_embed_model: str = "nomic-embed"
     bench_models: str = Field(default="llama-local,qwen-local,phi-local")
 
+    # Latencia
+    # Warm-up al arrancar: fuerza la carga en VRAM del modelo de chat y el de
+    # embeddings para que el primer request real no pague el cold-load de
+    # Ollama (varios segundos). Corre en background, no bloquea el startup.
+    warmup_enabled: bool = True
+    # TTL del cache de GET /v1/models (la UI lo pide en cada carga; los aliases
+    # solo cambian al editar litellm-config.yaml). 0 = sin cache.
+    models_cache_ttl_s: float = 30.0
+    # LRU de embeddings de query (task="query"): la misma pregunta repetida no
+    # vuelve a pagar el roundtrip LiteLLM→Ollama. 0 = off.
+    embed_query_cache_size: int = 128
+
     # RAG
     qdrant_host: str = "http://qdrant:6333"
     rag_collection: str = "llmops_docs"
